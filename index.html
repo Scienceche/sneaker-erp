@@ -266,7 +266,7 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.1 · 单文件离线进销存<br>支持扫码录入 / 尺码批量建档 / 出入库 / 销售 / 利润统计 / 低库存预警 / 数据备份。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.2 · 单文件进销存<br>支持扫码录入 / 条码库自动填充 / 得物搜同款 / 尺码批量建档 / 出入库 / 销售 / 利润统计 / 低库存预警 / 数据备份。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -287,6 +287,7 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
     <h3><span id="formTitle">新增商品</span><button class="x" onclick="closeForm()">×</button></h3>
     <input type="hidden" id="fId">
     <p class="hint" style="margin-bottom:10px">同一条码<b>只需建档一次</b>，之后扫码直接识别。整排尺码一次填好，例：<b>40-45</b> 或 <b>40,41,42.5</b>。</p>
+    <button class="btn small" style="margin-bottom:10px;width:100%" onclick="searchDewu()">🔍 得物搜同款（自动带关键词，查名称/价格）</button>
     <div class="frow">
       <div><label class="fl">条码/货号(扫码自动填)</label><input id="fBarcode" placeholder="条码或货号"></div>
       <div><label class="fl">尺码(支持批量)</label><input id="fSize" type="text" inputmode="decimal" placeholder="40,41,42 或 40-45"></div>
@@ -301,6 +302,9 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
       <button class="chip" onclick="pickBrand(this)">Jordan</button>
       <button class="chip" onclick="pickBrand(this)">New Balance</button>
       <button class="chip" onclick="pickBrand(this)">Asics</button>
+      <button class="chip" onclick="pickBrand(this)">Puma</button>
+      <button class="chip" onclick="pickBrand(this)">Converse</button>
+      <button class="chip" onclick="pickBrand(this)">Vans</button>
       <button class="chip" onclick="pickBrand(this)">李宁</button>
       <button class="chip" onclick="pickBrand(this)">安踏</button>
     </div>
@@ -437,6 +441,60 @@ function renderProd(){
       '<div class="qty"><b style="color:'+(p.qty<=0?'var(--bad)':low?'var(--warn)':'var(--acc)')+'">'+(p.qty|0)+'</b><small>在库</small></div>'+
     '</div>';
   }).join("") : '<div class="empty"><span class="big">📦</span>没有匹配的商品<br><button class="btn small primary" style="margin-top:10px" onclick="openForm()">新增商品</button></div>';
+}
+
+/* ================= 联网数据源 ================= */
+var BRANDS = ["Nike","Jordan","Air Jordan","Adidas","New Balance","Asics","Puma","Converse","Vans","Reebok","Under Armour","Skechers","李宁","安踏","特步","匹克","鸿星尔克","361"];
+
+/* 得物搜同款：自动带品牌+型号/货号关键词，跳得物网页版 */
+function searchDewu(kw){
+  var g = function(id){ return document.getElementById(id).value.trim(); };
+  kw = String(kw || (g("fBrand")+" "+g("fModel")+" "+g("fSku"))).trim();
+  if(!kw){ toast("先填品牌/型号/货号，再搜同款","err"); return; }
+  window.open("https://www.dewu.com/search?keyword=" + encodeURIComponent(kw), "_blank");
+}
+
+/* 新条码联网查询：UPCitemdb 公开条码库（尽力填充，4秒超时静默降级为手动） */
+function lookupBarcode(code){
+  if(!code || String(code).length < 8 || !window.fetch) return;
+  var ctrl = ("AbortController" in window) ? new AbortController() : null;
+  var done = false;
+  var timer = setTimeout(function(){ if(!done){ done=true; if(ctrl) try{ ctrl.abort(); }catch(e){} } }, 4000);
+  fetch("https://api.upcitemdb.com/prod/trial/lookup?upc=" + encodeURIComponent(code),
+        ctrl ? { signal: ctrl.signal } : {})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      if(done) return; done = true; clearTimeout(timer);
+      var it = d && d.items && d.items[0];
+      if(!it) return;
+      var fb = document.getElementById("fBarcode");
+      if(!fb || fb.value.trim() !== code) return; /* 表单已关或条码已改，放弃填充 */
+      var title = String(it.title || "");
+      var lpBrand = String(it.brand || "").toLowerCase();
+      var tl = title.toLowerCase();
+      /* 1) 标题里识别已知品牌  2) 库brand字段兜底 */
+      var hit = "";
+      for(var i=0;i<BRANDS.length;i++){ if(tl.indexOf(BRANDS[i].toLowerCase())>=0){ hit = BRANDS[i]; break; } }
+      if(!hit && lpBrand){
+        for(var j=0;j<BRANDS.length;j++){ if(lpBrand.indexOf(BRANDS[j].toLowerCase())>=0){ hit = BRANDS[j]; break; } }
+        if(!hit) hit = it.brand;
+      }
+      if(hit && !document.getElementById("fBrand").value.trim()){
+        document.getElementById("fBrand").value = hit;
+        document.querySelectorAll("#brandChips .chip").forEach(function(c){
+          c.classList.toggle("active", c.textContent.trim()===hit);
+        });
+      }
+      /* 型号 = 标题去掉品牌词后的主体 */
+      if(title && !document.getElementById("fModel").value.trim()){
+        var model = title;
+        BRANDS.forEach(function(b){ model = model.replace(new RegExp(b, "ig"), " "); });
+        model = model.replace(/[()（）【】\[\]"']/g, " ").replace(/\s+/g, " ").trim();
+        if(model) document.getElementById("fModel").value = model.slice(0, 40);
+      }
+      if(hit || title) toast("已自动填充条码库信息，请补尺码数量","ok",3000);
+    })
+    .catch(function(){ if(!done){ done=true; clearTimeout(timer); } /* 不可达静默，手动录入 */ });
 }
 
 /* ================= 表单 ================= */
@@ -693,8 +751,9 @@ function handleCode(code){
         '<button class="btn small orange" onclick="stockOp(\''+p.id+'\',\'sale\')">售出</button></div></div>';
       }).join("")+'</div>';
   } else {
-    toast("新条码，首次建档（录一次，之后扫码直接识别）");
+    toast("新条码，首次建档（自动查条码库，录一次之后直接识别）");
     openForm(null, code);
+    lookupBarcode(code);
   }
 }
 
