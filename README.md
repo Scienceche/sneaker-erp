@@ -35,6 +35,16 @@
 - 数据结构：`{ products, records, orders, meta }` 存于 localStorage 单键 `sneaker_erp_v1`；旧版本数据打开即自动迁移（补齐 orders 等字段），无需手动处理
 - Service Worker 采用缓存优先策略：**发版更新时请把 `sw.js` 里的 `CACHE` 版本号 +1**，否则老用户可能停留在旧缓存
 
+## 海外行情自动刷新(可选 · 本地行情服务)
+
+电脑上跑一个零依赖小服务,ERP 一键把在库商品的「海外行情价」刷成 GOAT 实时分码最低价(人民币):
+
+1. 电脑安装 [Node.js](https://nodejs.org/zh-cn)(LTS 即可)
+2. 双击仓库里的 `price-service/启动行情服务.bat`(或 `node price-service/mkt-server.js`)
+3. 打开 ERP → 设置 → 海外行情自动刷新 → 「测试连接」→「刷新在库商品海外行情」
+
+按**货号**精确匹配、按**欧码**取对应尺码价格;无尺码商品取全码最低价。数据来自 GOAT 前端公开搜索接口(与开源 Sneaks-API 同性质),非官方接口、仅供个人行情参考。手机浏览器因跨域限制连不到电脑服务:建议电脑端刷新后,用「导出/导入备份」把数据同步到手机。
+
 ## 部署到手机可安装的在线版（GitHub Pages）
 
 1. Fork / 推送到 GitHub 仓库

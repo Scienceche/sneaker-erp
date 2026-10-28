@@ -343,6 +343,18 @@ nav button{position:relative}
     </div>
 
     <div class="card">
+      <h3>海外行情自动刷新 · GOAT 数据源</h3>
+      <div class="frow">
+        <div><label class="fl">行情服务地址(电脑上启动 price-service 后使用)</label><input id="mktApi" placeholder="http://127.0.0.1:6120"></div>
+      </div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn small" onclick="testMktApi()">测试连接</button>
+        <button class="btn small primary" id="btnSyncMkt" style="flex:1" onclick="syncMktPrices()">刷新在库商品海外行情</button>
+      </div>
+      <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。</p>
+    </div>
+
+    <div class="card">
       <h3>手机安装说明</h3>
       <p class="hint">
         <b>推荐 · 在线版（支持扫码）</b><br>
@@ -357,7 +369,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.4 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物StockX比价直达 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.5 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物比价直达 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -1265,6 +1277,54 @@ function renderRec(){
   document.getElementById("recList").innerHTML = list.length ? list.map(recHtml).join("") : '<div class="empty"><span class="big">🧾</span>暂无记录</div>';
 }
 
+/* ================= 海外行情自动刷新(本地 price-service) ================= */
+function mktApiBase(){
+  if(!db.meta.mktApi) db.meta.mktApi = "http://127.0.0.1:6120";
+  return db.meta.mktApi.replace(/\/+$/,"");
+}
+function initMktApi(){ var el = document.getElementById("mktApi"); if(el) el.value = mktApiBase(); }
+async function testMktApi(){
+  db.meta.mktApi = (document.getElementById("mktApi").value.trim()||"http://127.0.0.1:6120"); save();
+  try{
+    var r = await fetch(mktApiBase()+"/health", { cache:"no-store" });
+    if(!r.ok) throw 0;
+    toast("行情服务连接成功 ✓","ok");
+  }catch(e){ toast("连不上行情服务：请先在电脑启动 price-service","err",3000); }
+}
+var mktSyncing = false;
+async function syncMktPrices(){
+  if(mktSyncing) return;
+  db.meta.mktApi = (document.getElementById("mktApi").value.trim()||"http://127.0.0.1:6120"); save();
+  var targets = db.products.filter(function(p){ return (p.qty|0) > 0 && (p.sku || p.barcode); });
+  if(!targets.length){ toast("没有在库且带货号/条码的商品","err"); return; }
+  mktSyncing = true;
+  var btn = document.getElementById("btnSyncMkt"); btn.disabled = true;
+  var ok=0, miss=0, fail=0;
+  for(var i=0;i<targets.length;i++){
+    var p = targets[i];
+    btn.textContent = "刷新中 "+(i+1)+"/"+targets.length+"…";
+    try{
+      var r = await fetch(mktApiBase()+"/price?sku="+encodeURIComponent(p.sku||p.barcode), { cache:"no-store" });
+      var d = await r.json();
+      if(!d || !d.found || !d.sizes || !d.sizes.length){ miss++; }
+      else{
+        var pick = null;
+        if(p.size){
+          var want = String(p.size).trim();
+          pick = d.sizes.find(function(s){ return String(s.eu)===want; }) || null;
+        }
+        var cny = pick ? (pick.cny||0) : (d.minCny||0);
+        if(cny > 0){ applyMkt(p, 0, cny); ok++; } else { miss++; }
+      }
+    }catch(e){ fail++; }
+    await new Promise(function(res){ setTimeout(res, 350); });
+  }
+  save();
+  mktSyncing = false; btn.disabled = false; btn.textContent = "刷新在库商品海外行情";
+  renderProd(); renderHome();
+  toast("海外行情刷新完成：更新 "+ok+" · 未匹配 "+miss+" · 失败 "+fail,"ok",3500);
+}
+
 /* ================= 备份 ================= */
 function download(name, content, mime){
   var b = new Blob([content], {type:mime||"application/octet-stream"});
@@ -1382,6 +1442,7 @@ function importProductsCSV(inp){
 /* ================= 启动 ================= */
 load();
 initScanMode();
+initMktApi();
 renderHome();
 renderProd();
 renderCartBadge();
