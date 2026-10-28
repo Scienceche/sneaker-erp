@@ -351,7 +351,7 @@ nav button{position:relative}
         <button class="btn small" onclick="testMktApi()">测试连接</button>
         <button class="btn small primary" id="btnSyncMkt" style="flex:1" onclick="syncMktPrices()">刷新在库商品海外行情</button>
       </div>
-      <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。</p>
+      <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。<br><b>得物行情为什么不能自动刷新?</b>得物无公开接口,老签名(2019小程序版)已封禁,新签名未公开,识货聚合接口也有WAF防护——所以得物价走「比价按钮 + 商品列表「行情」快填」半自动方式。</p>
     </div>
 
     <div class="card">
@@ -369,7 +369,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.5 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物比价直达 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.6 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -649,7 +649,7 @@ function renderProd(){
         '<div class="meta">进 '+money(p.buy)+' / 售 '+money(p.sell)+'</div>'+
         (p.dw||p.sx ? '<div class="meta" style="color:var(--blue)">行情'+(p.dw?' 得物'+money(p.dw):'')+(p.sx?' · 海外'+money(p.sx):'')+' · '+ageStr(p.dwAt||p.sxAt)+'</div>' : '')+
       '</div>'+
-      '<div class="qty"><b style="color:'+(p.qty<=0?'var(--bad)':low?'var(--warn)':'var(--acc)')+'">'+(p.qty|0)+'</b><small>在库</small></div>'+
+      '<div class="qty"><div class="btnrow"><button class="btn small" onclick="openMktQuick(\''+p.id+'\')">行情</button></div><b style="color:'+(p.qty<=0?'var(--bad)':low?'var(--warn)':'var(--acc)')+'">'+(p.qty|0)+'</b><small>在库</small></div>'+
     '</div>';
   }).join("") : '<div class="empty"><span class="big">📦</span>没有匹配的商品<br><button class="btn small primary" style="margin-top:10px" onclick="openForm()">新增商品</button></div>';
 }
@@ -732,6 +732,31 @@ function ageStr(ts){
   if(s<3600) return Math.max(1,Math.round(s/60))+"分钟前";
   if(s<86400) return Math.round(s/3600)+"小时前";
   return Math.round(s/86400)+"天前";
+}
+/* 行情快填：商品列表一键更新得物/海外行情价 */
+function openMktQuick(id){
+  var p = db.products.find(function(x){ return x.id===id; });
+  if(!p) return;
+  var sheet = document.getElementById("actSheet");
+  sheet.innerHTML =
+    '<h3><span>行情快填 · '+esc(pName(p))+(p.size?' '+esc(p.size)+'码':'')+'</span><button class="x" onclick="closeAct()">×</button></h3>'+
+    '<p class="hint" style="margin-bottom:12px">点表单里的「得物比价」跳得物查最新价，回来填这里；海外价可一键从GOAT刷新。当前：得物 '+(p.dw?money(p.dw)+"("+ageStr(p.dwAt)+")":"未填")+' · 海外 '+(p.sx?money(p.sx)+"("+ageStr(p.sxAt)+")":"未填")+'</p>'+
+    '<div class="frow">'+
+      '<div><label class="fl">得物行情价(元)</label><input id="qDw" type="number" inputmode="decimal" step="0.01" value="'+(p.dw||"")+'"></div>'+
+      '<div><label class="fl">海外行情价(元)</label><input id="qSx" type="number" inputmode="decimal" step="0.01" value="'+(p.sx||"")+'"></div>'+
+    '</div>'+
+    '<div class="btnrow" style="margin-top:6px"><button class="btn small" onclick="lookupPrice2(\''+esc(p.sku||p.barcode||pName(p))+'\')">🔍 去得物/识货查价</button></div>'+
+    '<button class="btn primary" style="width:100%;padding:13px;margin-top:14px" onclick="saveMktQuick(\''+id+'\')">保存行情</button>';
+  document.getElementById("actMask").classList.add("show");
+}
+function lookupPrice2(kw){ window.open("https://m.dewu.com/router/common/SearchResultPage?keyword="+encodeURIComponent(kw), "_blank"); }
+function saveMktQuick(id){
+  var p = db.products.find(function(x){ return x.id===id; });
+  if(!p) return;
+  applyMkt(p, document.getElementById("qDw").value, document.getElementById("qSx").value);
+  p.updatedAt = Date.now();
+  save(); closeAct(); renderProd(); renderHome();
+  toast("行情已更新：得物 "+(p.dw?money(p.dw):"未填")+" · 海外 "+(p.sx?money(p.sx):"未填"),"ok");
 }
 function pickBrand(el){
   document.getElementById("fBrand").value = el.textContent.trim();
