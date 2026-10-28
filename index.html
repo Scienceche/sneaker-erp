@@ -207,6 +207,11 @@ nav button{position:relative}
     </div>
 
     <div class="card">
+      <h3>行情估值 <span class="more">按 得物行情价 × 在库</span></h3>
+      <div id="valBox"></div>
+    </div>
+
+    <div class="card">
       <h3>低库存预警 <span class="more" id="lowCount"></span></h3>
       <div id="lowList"></div>
     </div>
@@ -332,6 +337,7 @@ nav button{position:relative}
         1. 扫到新条码建档时，点表单里的 <b>识货比价 / 得物比价</b>，按货号直达搜索结果页（手机上会唤起对应App）；<br>
         2. 在识货/得物里确认商品后，把<b>货号(如 DD1391-100)</b>、名称、配色、发售价填进表单保存；<br>
         3. 之后同款鞋只需改尺码快速建档，扫码/输货号都能直接识别库存。<br>
+        <b>行情价</b>：商品表单可记录「得物行情价 / 海外行情价(StockX/GOAT)」并保留更新时间，首页「行情估值」按 得物价×在库 自动算浮盈与溢价率——借鉴得物价格追踪/国内外比价的玩法，数据由你维护、存本机。<br>
         本应用数据完全存本机，不经过任何服务器，因此无法在扫码瞬间自动联网带出商品资料——这也是它离线可用的原因。
       </p>
     </div>
@@ -351,7 +357,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.3 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物比价直达 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.4 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物StockX比价直达 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -376,6 +382,11 @@ nav button{position:relative}
       <button class="btn small" onclick="lookupPrice('shihuo')">🔍 识货比价</button>
       <button class="btn small" onclick="lookupPrice('dewu')">👟 得物比价</button>
       <span class="hint" style="flex:1;align-self:center">新鞋扫不出信息？点按钮按 <b>货号</b> 搜识货/得物，把名称/货号/发售价抄进来即可</span>
+    </div>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="btn small" onclick="lookupPrice('stockx')">🌍 StockX比价</button>
+      <button class="btn small" onclick="lookupPrice('goat')">🐐 GOAT比价</button>
+      <span class="hint" style="flex:1;align-self:center">海外行情(需科学上网)。查到的价格填到下方「行情价」，首页自动算库存溢价</span>
     </div>
     <p class="hint" style="margin-bottom:10px">同一条码<b>只需建档一次</b>，之后扫码直接识别。整排尺码一次填好，例：<b>40-45</b> 或 <b>40,41,42.5</b>。同款不同码共用<b>货号</b>，填上货号后扫鞋盒货号条码也能识别。新条码会自动尝试联网查条码库填充品牌/型号。</p>
     <div class="frow">
@@ -405,6 +416,10 @@ nav button{position:relative}
     <div class="frow">
       <div><label class="fl">进价(元)</label><input id="fBuy" type="number" inputmode="decimal" step="0.01" placeholder="0.00"></div>
       <div><label class="fl">售价(元)</label><input id="fSell" type="number" inputmode="decimal" step="0.01" placeholder="0.00"></div>
+    </div>
+    <div class="frow">
+      <div><label class="fl">得物行情价(元)</label><input id="fDw" type="number" inputmode="decimal" step="0.01" placeholder="选填,首页算库存溢价"></div>
+      <div><label class="fl">海外行情价(元)</label><input id="fSx" type="number" inputmode="decimal" step="0.01" placeholder="选填,StockX/GOAT"></div>
     </div>
     <div class="frow">
       <div><label class="fl">每码数量</label><input id="fQty" type="number" inputmode="numeric" value="1"></div>
@@ -515,6 +530,23 @@ function renderHome(){
     ? recs.map(recHtml).join("")
     : '<p class="hint">暂无记录。扫码或新增商品开始使用。</p>';
 
+  /* 行情估值：仅统计填了得物行情价且在库的商品 */
+  var mkt=0, mcost=0, mqty=0;
+  db.products.forEach(function(p){
+    if(p.dw>0 && (p.qty|0)>0){ mkt += p.dw*(p.qty|0); mcost += (Number(p.buy)||0)*(p.qty|0); mqty += p.qty|0; }
+  });
+  var vb = document.getElementById("valBox");
+  if(mqty>0){
+    var pl = mkt-mcost, rate = mcost>0 ? Math.round(pl/mcost*100) : 0;
+    vb.innerHTML = '<div class="grid3">'+
+      '<div class="stat hl"><div class="l">行情总值</div><div class="k">'+money(mkt)+'</div></div>'+
+      '<div class="stat"><div class="l">这部分成本</div><div class="k">'+money(mcost)+'</div></div>'+
+      '<div class="stat o"><div class="l">浮盈</div><div class="k" style="color:'+(pl>=0?'var(--ok)':'var(--bad)')+'">'+(pl>=0?"+":"−")+money(Math.abs(pl))+'</div></div>'+
+      '</div><p class="hint">覆盖 '+mqty+' 件在库商品，溢价率 <b>'+(pl>=0?"+":"−")+Math.abs(rate)+'%</b>；未填行情价的商品不计入。点商品 → 编辑可更新行情价。</p>';
+  } else {
+    vb.innerHTML = '<p class="hint">在商品表单里填「得物行情价」（可点表单里的比价按钮查最新价），这里就会展示库存行情估值与浮盈。</p>';
+  }
+
   drawTrend();
   renderBrandBars();
 }
@@ -603,6 +635,7 @@ function renderProd(){
         '<div class="nm">'+esc(pName(p))+'</div>'+
         '<div class="meta">'+esc(pMeta(p))+(p.barcode?' · '+esc(p.barcode):'')+'</div>'+
         '<div class="meta">进 '+money(p.buy)+' / 售 '+money(p.sell)+'</div>'+
+        (p.dw||p.sx ? '<div class="meta" style="color:var(--blue)">行情'+(p.dw?' 得物'+money(p.dw):'')+(p.sx?' · 海外'+money(p.sx):'')+' · '+ageStr(p.dwAt||p.sxAt)+'</div>' : '')+
       '</div>'+
       '<div class="qty"><b style="color:'+(p.qty<=0?'var(--bad)':low?'var(--warn)':'var(--acc)')+'">'+(p.qty|0)+'</b><small>在库</small></div>'+
     '</div>';
@@ -662,10 +695,31 @@ function lookupPrice(src){
   var g = function(id){ return (document.getElementById(id).value||"").trim(); };
   var kw = g("fSku") || g("fBarcode") || [g("fBrand"), g("fModel")].filter(Boolean).join(" ");
   if(!kw){ toast("先填条码 / 货号，或品牌+型号再搜","err"); return; }
-  var url = src==="shihuo"
-    ? "https://m-share.shihuo.cn/search/searchResult/goods?keywords=" + encodeURIComponent(kw)
-    : "https://m.dewu.com/router/common/SearchResultPage?keyword=" + encodeURIComponent(kw);
+  var url = src==="shihuo" ? "https://m-share.shihuo.cn/search/searchResult/goods?keywords=" + encodeURIComponent(kw)
+          : src==="dewu"   ? "https://m.dewu.com/router/common/SearchResultPage?keyword=" + encodeURIComponent(kw)
+          : src==="stockx" ? "https://stockx.com/search?sneakers=" + encodeURIComponent(kw)
+          :                  "https://www.goat.com/search?query=" + encodeURIComponent(kw);
   window.open(url, "_blank");
+}
+/* 行情价落库：变化才记时间戳,并追加历史点(上限60) */
+function applyMkt(p, dw, sx){
+  var touched = false;
+  dw = Number(dw)||0; sx = Number(sx)||0;
+  if(dw>0 && (p.dw||0)!==dw){ p.dw = dw; p.dwAt = Date.now(); touched = true; }
+  if(sx>0 && (p.sx||0)!==sx){ p.sx = sx; p.sxAt = Date.now(); touched = true; }
+  if(touched){
+    p.prices = p.prices||[];
+    p.prices.push({ ts: Date.now(), dw: p.dw||0, sx: p.sx||0 });
+    if(p.prices.length>60) p.prices.shift();
+  }
+}
+function ageStr(ts){
+  if(!ts) return "";
+  var s = (Date.now()-ts)/1000;
+  if(s<60) return "刚刚";
+  if(s<3600) return Math.max(1,Math.round(s/60))+"分钟前";
+  if(s<86400) return Math.round(s/3600)+"小时前";
+  return Math.round(s/86400)+"天前";
 }
 function pickBrand(el){
   document.getElementById("fBrand").value = el.textContent.trim();
@@ -706,6 +760,8 @@ function openForm(id, presetBarcode){
   document.getElementById("fSize").value   = p ? (p.size||"")   : "";
   document.getElementById("fBuy").value    = p ? (p.buy||"")    : "";
   document.getElementById("fSell").value   = p ? (p.sell||"")   : "";
+  document.getElementById("fDw").value     = p ? (p.dw||"")     : "";
+  document.getElementById("fSx").value     = p ? (p.sx||"")     : "";
   document.getElementById("fQty").value    = p ? (p.qty|0)      : 1;
   document.getElementById("fMin").value     = p ? (p.min|0)     : 1;
   document.getElementById("btnDel").style.display = p ? "" : "none";
@@ -736,10 +792,14 @@ function saveForm(){
   var editId = document.getElementById("fId").value;
 
   if(editId){
-    // 编辑：单一商品，尺码按原样保存
+    // 编辑：单一商品，尺码按原样保存；行情价变化才记时间戳
     var obj = Object.assign({ id: editId, size: g("fSize"), qty: qty }, common);
     var exist = db.products.find(function(p){ return p.id===editId; });
-    if(exist){ db.products = db.products.map(function(p){ return p.id===editId?obj:p; }); }
+    if(exist){
+      applyMkt(exist, document.getElementById("fDw").value, document.getElementById("fSx").value);
+      obj.dw = exist.dw||0; obj.dwAt = exist.dwAt; obj.sx = exist.sx||0; obj.sxAt = exist.sxAt; obj.prices = exist.prices;
+      db.products = db.products.map(function(p){ return p.id===editId?obj:p; });
+    }
     save(); closeForm(); renderProd(); toast("已保存","ok");
     return;
   }
@@ -760,6 +820,7 @@ function saveForm(){
       db.products.push(p);
       created++;
     }
+    applyMkt(p, document.getElementById("fDw").value, document.getElementById("fSx").value);
     addRec("in", p, qty, common.buy*qty, 0, "建档入库");
   });
   save(); closeForm(); renderProd();
@@ -1238,8 +1299,8 @@ function csvRows(rows){ return "\uFEFF"+rows.map(function(r){ return r.map(funct
 function exportCSV(kind){
   var rows, name;
   if(kind==="products"){
-    rows = [["条码","品牌","型号","颜色","货号","尺码","进价","售价","库存","预警值","更新时间"]];
-    db.products.forEach(function(p){ rows.push([p.barcode,p.brand,p.model,p.color,p.sku,p.size,p.buy,p.sell,p.qty,p.min,new Date(p.updatedAt||0).toLocaleString()]); });
+    rows = [["条码","品牌","型号","颜色","货号","尺码","进价","售价","得物行情","海外行情","库存","预警值","更新时间"]];
+    db.products.forEach(function(p){ rows.push([p.barcode,p.brand,p.model,p.color,p.sku,p.size,p.buy,p.sell,p.dw||"",p.sx||"",p.qty,p.min,new Date(p.updatedAt||0).toLocaleString()]); });
     name = "商品库存.csv";
   } else {
     rows = [["时间","类型","商品","数量","金额","利润","条码","备注"]];
@@ -1280,7 +1341,7 @@ function importProductsCSV(inp){
       var rows = parseCSV(rd.result);
       if(rows.length < 2) throw new Error("没有数据行");
       var head = rows[0].map(function(c){ return String(c).trim(); });
-      var COLS = ["条码","品牌","型号","颜色","货号","尺码","进价","售价","库存","预警值"];
+      var COLS = ["条码","品牌","型号","颜色","货号","尺码","进价","售价","得物行情","海外行情","库存","预警值"];
       var col = {};
       COLS.forEach(function(h){ col[h] = head.indexOf(h); });
       if(col["条码"]<0 && col["货号"]<0) throw new Error("缺少「条码」或「货号」列，请使用导出的CSV格式");
@@ -1298,12 +1359,14 @@ function importProductsCSV(inp){
           if(get("进价")) dup.buy = Number(get("进价"))||0;
           if(get("售价")) dup.sell = Number(get("售价"))||0;
           if(get("预警值")) dup.min = parseInt(get("预警值"))||0;
+          applyMkt(dup, get("得物行情"), get("海外行情"));
           if(qty>0){ dup.qty = (dup.qty|0) + qty; addRec("in",dup,qty,(dup.buy||0)*qty,0,"CSV导入补货"); restock += qty; }
           dup.updatedAt = Date.now(); updated++;
         } else {
           var p = { id: uid(), barcode: barcode, brand: get("品牌"), model: get("型号"), color: get("颜色"), sku: get("货号"),
             size: size, buy: Number(get("进价"))||0, sell: Number(get("售价"))||0, qty: qty,
             min: parseInt(get("预警值"))||1, createdAt: Date.now(), updatedAt: Date.now() };
+          applyMkt(p, get("得物行情"), get("海外行情"));
           db.products.push(p); created++;
           if(qty>0) addRec("in", p, qty, p.buy*qty, 0, "CSV建档入库");
         }
