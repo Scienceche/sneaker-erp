@@ -326,6 +326,17 @@ nav button{position:relative}
     </div>
 
     <div class="card">
+      <h3>识货 / 得物 辅助建档</h3>
+      <p class="hint">
+        识货、得物<b>没有开放的商品查询接口</b>，本应用用「比价直达」的方式接入：<br>
+        1. 扫到新条码建档时，点表单里的 <b>识货比价 / 得物比价</b>，按货号直达搜索结果页（手机上会唤起对应App）；<br>
+        2. 在识货/得物里确认商品后，把<b>货号(如 DD1391-100)</b>、名称、配色、发售价填进表单保存；<br>
+        3. 之后同款鞋只需改尺码快速建档，扫码/输货号都能直接识别库存。<br>
+        本应用数据完全存本机，不经过任何服务器，因此无法在扫码瞬间自动联网带出商品资料——这也是它离线可用的原因。
+      </p>
+    </div>
+
+    <div class="card">
       <h3>手机安装说明</h3>
       <p class="hint">
         <b>推荐 · 在线版（支持扫码）</b><br>
@@ -340,7 +351,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.2 · 单文件离线进销存<br>支持扫码录入 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.3 · 单文件离线进销存<br>支持扫码录入 / 尺码批量建档 / 识货得物比价直达 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -361,7 +372,12 @@ nav button{position:relative}
   <div class="sheet">
     <h3><span id="formTitle">新增商品</span><button class="x" onclick="closeForm()">×</button></h3>
     <input type="hidden" id="fId">
-    <p class="hint" style="margin-bottom:10px">同一条码<b>只需建档一次</b>，之后扫码直接识别。整排尺码一次填好，例：<b>40-45</b> 或 <b>40,41,42.5</b>。</p>
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="btn small" onclick="lookupPrice('shihuo')">🔍 识货比价</button>
+      <button class="btn small" onclick="lookupPrice('dewu')">👟 得物比价</button>
+      <span class="hint" style="flex:1;align-self:center">新鞋扫不出信息？点按钮按 <b>货号</b> 搜识货/得物，把名称/货号/发售价抄进来即可</span>
+    </div>
+    <p class="hint" style="margin-bottom:10px">同一条码<b>只需建档一次</b>，之后扫码直接识别。整排尺码一次填好，例：<b>40-45</b> 或 <b>40,41,42.5</b>。同款不同码共用<b>货号</b>，填上货号后扫鞋盒货号条码也能识别。</p>
     <div class="frow">
       <div><label class="fl">条码/货号(扫码自动填)</label><input id="fBarcode" placeholder="条码或货号"></div>
       <div><label class="fl">尺码(支持批量)</label><input id="fSize" type="text" inputmode="decimal" placeholder="40,41,42 或 40-45"></div>
@@ -591,6 +607,16 @@ function renderProd(){
 }
 
 /* ================= 表单 ================= */
+/* 识货/得物比价：按 货号 > 条码 > 品牌+型号 智能选关键词直达搜索 */
+function lookupPrice(src){
+  var g = function(id){ return (document.getElementById(id).value||"").trim(); };
+  var kw = g("fSku") || g("fBarcode") || [g("fBrand"), g("fModel")].filter(Boolean).join(" ");
+  if(!kw){ toast("先填条码 / 货号，或品牌+型号再搜","err"); return; }
+  var url = src==="shihuo"
+    ? "https://m-share.shihuo.cn/search/searchResult/goods?keywords=" + encodeURIComponent(kw)
+    : "https://m.dewu.com/router/common/SearchResultPage?keyword=" + encodeURIComponent(kw);
+  window.open(url, "_blank");
+}
 function pickBrand(el){
   document.getElementById("fBrand").value = el.textContent.trim();
   document.querySelectorAll("#brandChips .chip").forEach(function(c){ c.classList.remove("active"); });
@@ -877,7 +903,7 @@ function handleCode(code){
         '<button class="btn small" onclick="addToCart(\''+p.id+'\',1)">加购</button></div></div>';
       }).join("")+'</div>';
   } else {
-    toast("新条码，首次建档（录一次，之后扫码直接识别）");
+    toast("新条码，首次建档：可先点表单里的识货/得物比价查货号（录一次，之后扫码直接识别）");
     openForm(null, code);
   }
 }
