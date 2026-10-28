@@ -266,7 +266,7 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.0 · 单文件离线进销存<br>支持扫码录入 / 出入库 / 销售 / 利润统计 / 低库存预警 / 数据备份。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.1 · 单文件离线进销存<br>支持扫码录入 / 尺码批量建档 / 出入库 / 销售 / 利润统计 / 低库存预警 / 数据备份。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -286,13 +286,23 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
   <div class="sheet">
     <h3><span id="formTitle">新增商品</span><button class="x" onclick="closeForm()">×</button></h3>
     <input type="hidden" id="fId">
+    <p class="hint" style="margin-bottom:10px">同一条码<b>只需建档一次</b>，之后扫码直接识别。整排尺码一次填好，例：<b>40-45</b> 或 <b>40,41,42.5</b>。</p>
     <div class="frow">
-      <div><label class="fl">条码(扫码自动填)</label><input id="fBarcode" placeholder="条码/货号"></div>
-      <div><label class="fl">尺码(EU)</label><input id="fSize" type="text" inputmode="decimal" placeholder="如 42"></div>
+      <div><label class="fl">条码/货号(扫码自动填)</label><input id="fBarcode" placeholder="条码或货号"></div>
+      <div><label class="fl">尺码(支持批量)</label><input id="fSize" type="text" inputmode="decimal" placeholder="40,41,42 或 40-45"></div>
     </div>
     <div class="frow">
       <div><label class="fl">品牌</label><input id="fBrand" placeholder="Nike/Adidas/…"></div>
       <div><label class="fl">型号</label><input id="fModel" placeholder="如 Dunk Low"></div>
+    </div>
+    <div class="chipbar" id="brandChips">
+      <button class="chip" onclick="pickBrand(this)">Nike</button>
+      <button class="chip" onclick="pickBrand(this)">Adidas</button>
+      <button class="chip" onclick="pickBrand(this)">Jordan</button>
+      <button class="chip" onclick="pickBrand(this)">New Balance</button>
+      <button class="chip" onclick="pickBrand(this)">Asics</button>
+      <button class="chip" onclick="pickBrand(this)">李宁</button>
+      <button class="chip" onclick="pickBrand(this)">安踏</button>
     </div>
     <div class="frow">
       <div><label class="fl">颜色</label><input id="fColor" placeholder="如 熊猫黑白"></div>
@@ -303,7 +313,7 @@ label.fl{display:block;color:var(--sub);font-size:12px;margin:0 0 4px 2px}
       <div><label class="fl">售价(元)</label><input id="fSell" type="number" inputmode="decimal" step="0.01" placeholder="0.00"></div>
     </div>
     <div class="frow">
-      <div><label class="fl">当前数量</label><input id="fQty" type="number" inputmode="numeric" value="1"></div>
+      <div><label class="fl">每码数量</label><input id="fQty" type="number" inputmode="numeric" value="1"></div>
       <div><label class="fl">库存预警值</label><input id="fMin" type="number" inputmode="numeric" value="1"></div>
     </div>
     <div class="btnrow" style="margin-top:6px">
@@ -430,6 +440,33 @@ function renderProd(){
 }
 
 /* ================= 表单 ================= */
+function pickBrand(el){
+  document.getElementById("fBrand").value = el.textContent.trim();
+  document.querySelectorAll("#brandChips .chip").forEach(function(c){ c.classList.remove("active"); });
+  el.classList.add("active");
+}
+/* 尺码批量解析："40,41,42" / "40-45" / "40.5" → 尺码数组（上限30） */
+function parseSizes(str){
+  if(!str) return [""];
+  var tokens = String(str).split(/[,，、;；\s]+/).filter(Boolean);
+  var out = [];
+  tokens.forEach(function(t){
+    var m = t.match(/^(\d+(?:\.\d+)?)\s*[-~至]\s*(\d+(?:\.\d+)?)$/);
+    if(m){
+      var a = parseFloat(m[1]), b = parseFloat(m[2]);
+      var step = (m[1].indexOf(".5") >= 0 || m[2].indexOf(".5") >= 0) ? 0.5 : 1;
+      if(b >= a && (b - a) / step <= 30){
+        for(var v = a; v <= b + 1e-9; v += step){
+          var s = (step === 0.5 && v % 1 !== 0) ? v.toFixed(1) : String(Math.round(v * 2) / 2);
+          out.push(s);
+        }
+        return;
+      }
+    }
+    out.push(t);
+  });
+  return out.slice(0, 30);
+}
 function openForm(id, presetBarcode){
   var p = id ? db.products.find(function(x){ return x.id===id; }) : null;
   document.getElementById("formTitle").textContent = p ? "编辑商品" : "新增商品";
@@ -445,6 +482,9 @@ function openForm(id, presetBarcode){
   document.getElementById("fQty").value    = p ? (p.qty|0)      : 1;
   document.getElementById("fMin").value     = p ? (p.min|0)     : 1;
   document.getElementById("btnDel").style.display = p ? "" : "none";
+  document.querySelectorAll("#brandChips .chip").forEach(function(c){
+    c.classList.toggle("active", p ? c.textContent.trim()===p.brand : false);
+  });
   document.getElementById("formMask").classList.add("show");
 }
 function closeForm(){ document.getElementById("formMask").classList.remove("show"); }
@@ -459,27 +499,46 @@ function saveForm(){
   var g = function(id){ return document.getElementById(id).value.trim(); };
   var barcode = g("fBarcode");
   if(!g("fBrand") && !g("fModel") && !g("fSku") && !barcode){ toast("至少填品牌/型号/货号/条码之一","err"); return; }
-  var size = g("fSize");
-  var dup = db.products.find(function(p){ return p.id!==document.getElementById("fId").value && (p.barcode||"")===(barcode) && (p.size||"")===(size); });
-  var obj = {
-    id: document.getElementById("fId").value || uid(),
+  var qty = parseInt(g("fQty"))||0;
+  var common = {
     barcode: barcode, brand: g("fBrand"), model: g("fModel"), color: g("fColor"),
-    sku: g("fSku"), size: size,
+    sku: g("fSku"),
     buy: Number(g("fBuy"))||0, sell: Number(g("fSell"))||0,
-    qty: parseInt(g("fQty"))||0, min: parseInt(g("fMin"))||0,
-    updatedAt: Date.now()
+    min: parseInt(g("fMin"))||0, updatedAt: Date.now()
   };
-  if(dup && confirm("已存在相同条码+尺码的商品「"+pName(dup)+"」，是否合并数量？")){
-    dup.qty = (dup.qty|0) + (obj.qty|0);
-    dup.updatedAt = Date.now();
-    ["brand","model","color","sku","buy","sell","min"].forEach(function(k){ if(obj[k]) dup[k]=obj[k]; });
-    addRec("in", dup, obj.qty, 0, 0, "合并入库");
-  } else {
-    var exist = db.products.find(function(p){ return p.id===obj.id; });
-    if(exist){ db.products = db.products.map(function(p){ return p.id===obj.id?obj:p; }); }
-    else { db.products.push(obj); }
+  var editId = document.getElementById("fId").value;
+
+  if(editId){
+    // 编辑：单一商品，尺码按原样保存
+    var obj = Object.assign({ id: editId, size: g("fSize"), qty: qty }, common);
+    var exist = db.products.find(function(p){ return p.id===editId; });
+    if(exist){ db.products = db.products.map(function(p){ return p.id===editId?obj:p; }); }
+    save(); closeForm(); renderProd(); toast("已保存","ok");
+    return;
   }
-  save(); closeForm(); renderProd(); toast("已保存","ok");
+
+  // 新增：支持尺码批量（40-45 → 每个尺码一条SKU，同条码）
+  var sizes = parseSizes(g("fSize"));
+  var created = 0, merged = 0;
+  sizes.forEach(function(sz){
+    var dup = db.products.find(function(p){ return (p.barcode||"")===barcode && (p.size||"")===sz; });
+    var p;
+    if(dup){
+      dup.qty = (dup.qty|0) + qty;
+      ["brand","model","color","sku","buy","sell","min"].forEach(function(k){ if(common[k]) dup[k]=common[k]; });
+      dup.updatedAt = Date.now();
+      p = dup; merged++;
+    } else {
+      p = Object.assign({ id: uid(), size: sz, qty: qty, createdAt: Date.now() }, common);
+      db.products.push(p);
+      created++;
+    }
+    addRec("in", p, qty, common.buy*qty, 0, "建档入库");
+  });
+  save(); closeForm(); renderProd();
+  var msg = created ? "已建档 "+created+" 个尺码" : "没有新建";
+  if(merged) msg += "，合并 "+merged+" 个已有条码+尺码";
+  toast(msg,"ok");
 }
 
 /* ================= 库存操作 ================= */
@@ -634,7 +693,7 @@ function handleCode(code){
         '<button class="btn small orange" onclick="stockOp(\''+p.id+'\',\'sale\')">售出</button></div></div>';
       }).join("")+'</div>';
   } else {
-    toast("新条码，请补全商品信息");
+    toast("新条码，首次建档（录一次，之后扫码直接识别）");
     openForm(null, code);
   }
 }
