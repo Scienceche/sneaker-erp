@@ -364,7 +364,7 @@ nav button{position:relative}
         <button class="btn small primary" id="btnSyncDw" style="flex:1" onclick="syncDwPrices()">刷新在库商品得物行情</button>
       </div>
       <p class="hint" id="gxNoSign" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"></p>
-      <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 自动刷新得物行情。<b>已登记的货号每天打开 ERP 会自动刷新,无需任何操作</b>;新货号只需在共鞋里查一次(终身有效)。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
+      <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 自动刷新得物行情。<b>已登记的货号每 6 小时自动刷新一次</b>(共鞋有查询配额,冷却避免浪费次数);新货号只需在共鞋里查一次(终身有效)。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
     </div>
 
     <div class="card">
@@ -1438,9 +1438,10 @@ async function probeLocalExt(){
     if(d && d.ok){
       card.style.display = "";
       gxSignInfo(d.total);
-      /* 打开 ERP 自动刷新在库得物行情(静默,已登记货号) */
+      /* 打开自动刷新带6小时冷却:共鞋有查询配额,避免每次打开都消耗次数 */
       var has = db.products.some(function(p){ return (p.qty|0) > 0 && p.sku; });
-      if(has) syncDwPrices(true);
+      var last = (db.meta && db.meta.dwLastSync) || 0;
+      if(has && Date.now() - last > 6*3600*1000) syncDwPrices(true);
     }
   }catch(e){}
 }
@@ -1497,7 +1498,7 @@ async function syncDwPrices(silent){
     }catch(e){ miss++; }
     await new Promise(function(res){ setTimeout(res, 3000); });
   }
-  save(); dwSyncing = false; if(btn){ btn.disabled = false; btn.textContent = "刷新在库商品得物行情"; }
+  save(); db.meta.dwLastSync = Date.now(); dwSyncing = false; if(btn){ btn.disabled = false; btn.textContent = "刷新在库商品得物行情"; }
   renderProd(); renderHome();
   if(silent){
     if(ok) toast("得物行情已自动刷新 "+ok+" 件"+(dwNoSign.length?(","+dwNoSign.length+" 个货号待登记"):""),"ok",4000);
