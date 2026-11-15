@@ -1611,7 +1611,8 @@ function importProductsCSV(inp){
         if(!barcode) continue;
         var size = get("尺码");
         var qty = parseInt(get("库存"))||0;
-        var dup = db.products.find(function(p){ return (p.barcode||"")===barcode && (p.size||"")===size; });
+        /* 匹配键:条码+尺码,或 货号+尺码(手机采集的价格CSV用货号当键) */
+        var dup = db.products.find(function(p){ return ((p.barcode||"")===barcode && (p.size||"")===size) || ((p.sku||"")===barcode && (p.size||"")===size); });
         if(dup){
           ["品牌","型号","颜色","货号"].forEach(function(h){ var v=get(h); if(v){ dup[ {品牌:"brand",型号:"model",颜色:"color",货号:"sku"}[h] ] = v; } });
           if(get("进价")) dup.buy = Number(get("进价"))||0;
