@@ -1603,16 +1603,17 @@ function importProductsCSV(inp){
       var col = {};
       COLS.forEach(function(h){ col[h] = head.indexOf(h); });
       if(col["条码"]<0 && col["货号"]<0) throw new Error("缺少「条码」或「货号」列，请使用导出的CSV格式");
+      var normSize = function(s){ s = String(s||"").trim(); var v = parseFloat(s); return (!isNaN(v) && String(v) === s.replace(/\.0+$/,"")) ? String(v) : s; };
       var created=0, updated=0, restock=0;
       for(var i=1;i<rows.length;i++){
         var r = rows[i];
         var get = function(h){ var c = col[h]; return c>=0 ? String(r[c]||"").trim() : ""; };
         var barcode = get("条码") || get("货号");
         if(!barcode) continue;
-        var size = get("尺码");
+        var size = normSize(get("尺码"));
         var qty = parseInt(get("库存"))||0;
-        /* 匹配键:条码+尺码,或 货号+尺码(手机采集的价格CSV用货号当键) */
-        var dup = db.products.find(function(p){ return ((p.barcode||"")===barcode && (p.size||"")===size) || ((p.sku||"")===barcode && (p.size||"")===size); });
+        /* 匹配键:条码+尺码,或 货号+尺码(手机采集的价格CSV用货号当键);尺码做数值归一(45.0=45) */
+        var dup = db.products.find(function(p){ return ((p.barcode||"")===barcode && normSize(p.size)===size) || ((p.sku||"")===barcode && normSize(p.size)===size); });
         if(dup){
           ["品牌","型号","颜色","货号"].forEach(function(h){ var v=get(h); if(v){ dup[ {品牌:"brand",型号:"model",颜色:"color",货号:"sku"}[h] ] = v; } });
           if(get("进价")) dup.buy = Number(get("进价"))||0;
