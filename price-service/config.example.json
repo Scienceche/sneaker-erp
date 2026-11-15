@@ -1,0 +1,7 @@
+{
+  "llm": {
+    "url": "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    "key": "在这里填入你的API key",
+    "model": "glm-4v-flash"
+  }
+}

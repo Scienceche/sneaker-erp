@@ -351,7 +351,7 @@ nav button{position:relative}
         <button class="btn small" onclick="testMktApi()">测试连接</button>
         <button class="btn small primary" id="btnSyncMkt" style="flex:1" onclick="syncMktPrices()">刷新在库商品海外行情</button>
       </div>
-      <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。<br><b>得物行情为什么不能自动刷新?</b>得物无公开接口,老签名(2019小程序版)已封禁,新签名未公开,识货聚合接口也有WAF防护——所以得物价走「比价按钮 + 商品列表「行情」快填」半自动方式。</p>
+      <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。<br><b>AI拍照识别</b>也走本服务:在 <b>price-service/config.json</b> 填入大模型 key 即可(参考 config.example.json;智谱 open.bigmodel.cn 的 glm-4v-flash 免费),拍鞋盒/鞋标自动填品牌/型号/配色/货号/尺码。<br><b>得物行情为什么不能自动刷新?</b>得物无公开接口,老签名(2019小程序版)已封禁,新签名未公开,识货聚合接口也有WAF防护——所以得物价走「比价按钮 + 商品列表「行情」快填」半自动方式。</p>
     </div>
 
     <div class="card">
@@ -369,7 +369,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.6 · 单文件进销存<br>支持扫码录入 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.7 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -390,6 +390,9 @@ nav button{position:relative}
   <div class="sheet">
     <h3><span id="formTitle">新增商品</span><button class="x" onclick="closeForm()">×</button></h3>
     <input type="hidden" id="fId">
+    <div class="btnrow" style="margin-bottom:10px">
+      <button class="btn small primary" id="btnAi" style="flex:1;padding:11px" onclick="pickAiPhoto()">🤖 AI拍照识别（鞋盒/鞋标，自动填表）</button>
+    </div>
     <div class="btnrow" style="margin-bottom:10px">
       <button class="btn small" onclick="lookupPrice('shihuo')">🔍 识货比价</button>
       <button class="btn small" onclick="lookupPrice('dewu')">👟 得物比价</button>
@@ -699,6 +702,68 @@ function lookupBarcode(code){
       if(hit || title) toast("已自动填充条码库信息，请补尺码数量","ok",3000);
     })
     .catch(function(){ if(!done){ done=true; clearTimeout(timer); } /* 不可达静默，手动录入 */ });
+}
+
+/* ================= AI 拍照识别(本地 price-service 代理视觉大模型) ================= */
+var aiBusy = false;
+function pickAiPhoto(){
+  if(aiBusy) return;
+  var inp = document.createElement("input");
+  inp.type = "file"; inp.accept = "image/*";
+  inp.setAttribute("capture", "environment");
+  inp.onchange = function(){
+    var f = inp.files && inp.files[0];
+    if(!f) return;
+    downscaleImage(f, 1024, function(b64){ runAiRecognize(b64); });
+  };
+  inp.click();
+}
+function downscaleImage(file, maxSide, cb){
+  var rd = new FileReader();
+  rd.onload = function(){
+    var img = new Image();
+    img.onload = function(){
+      var s = Math.min(1, maxSide / Math.max(img.width, img.height));
+      var cv = document.createElement("canvas");
+      cv.width = Math.round(img.width * s); cv.height = Math.round(img.height * s);
+      cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+      cb(cv.toDataURL("image/jpeg", 0.82).split(",")[1]);
+    };
+    img.onerror = function(){ toast("图片读取失败","err"); };
+    img.src = rd.result;
+  };
+  rd.readAsDataURL(file);
+}
+async function runAiRecognize(b64){
+  var btn = document.getElementById("btnAi");
+  if(btn){ btn.disabled = true; btn.textContent = "🤖 识别中…(约几秒)"; }
+  aiBusy = true;
+  try{
+    var r = await fetch(mktApiBase() + "/ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image: b64 })
+    });
+    var d = await r.json();
+    if(!d || !d.ok) throw new Error((d && d.error) || "识别失败");
+    var f = d.fields || {};
+    if(f.brand) document.getElementById("fBrand").value = f.brand;
+    if(f.model) document.getElementById("fModel").value = f.model;
+    if(f.color) document.getElementById("fColor").value = f.color;
+    if(f.sku){
+      document.getElementById("fSku").value = f.sku;
+      if(!(document.getElementById("fBarcode").value||"").trim()) document.getElementById("fBarcode").value = f.sku;
+    }
+    if(f.size) document.getElementById("fSize").value = f.size;
+    if(f.price && !(document.getElementById("fSell").value||"").trim()) document.getElementById("fSell").value = f.price;
+    document.querySelectorAll("#brandChips .chip").forEach(function(c){ c.classList.toggle("active", c.textContent.trim()===f.brand); });
+    var got = [["品牌",f.brand],["型号",f.model],["配色",f.color],["货号",f.sku],["尺码",f.size],["售价",f.price]].filter(function(x){return x[1];}).map(function(x){return x[0];});
+    toast("AI识别完成，已填 "+(got.join("/")||"0")+" 项，请核对后保存","ok",3200);
+  }catch(e){
+    toast(String(e.message||e).slice(0,90),"err",3500);
+  }
+  if(btn){ btn.disabled = false; btn.textContent = "🤖 AI拍照识别（鞋盒/鞋标，自动填表）"; }
+  aiBusy = false;
 }
 
 /* ================= 表单 ================= */
