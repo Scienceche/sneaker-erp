@@ -354,6 +354,15 @@ nav button{position:relative}
       <p class="hint" style="margin-top:8px">先在电脑上双击仓库里的 <b>price-service/启动行情服务.bat</b>(需 Node.js,GOAT 公开数据源国内直连)。按<b>货号</b>精确匹配、按<b>欧码</b>取对应尺码人民币最低价,无货号的商品自动跳过。手机浏览器受跨域限制连不到电脑服务,建议在电脑端刷新,再用「导出/导入备份」同步到手机。<br><b>AI拍照识别</b>也走本服务:在 <b>price-service/config.json</b> 填入大模型 key 即可(参考 config.example.json;智谱 open.bigmodel.cn 的 glm-4v-flash 免费),拍鞋盒/鞋标自动填品牌/型号/配色/货号/尺码。<br><b>得物行情为什么不能自动刷新?</b>得物无公开接口,老签名(2019小程序版)已封禁,新签名未公开,识货聚合接口也有WAF防护——所以得物价走「比价按钮 + 商品列表「行情」快填」半自动方式。</p>
     </div>
 
+    <div class="card" id="gxCard" style="display:none">
+      <h3>得物行情自动刷新 · 本地扩展源 <span class="more" id="gxSignInfo"></span></h3>
+      <div class="btnrow">
+        <button class="btn small" onclick="gxCapture()">📥 采集签名</button>
+        <button class="btn small primary" id="btnSyncDw" style="flex:1" onclick="syncDwPrices()">刷新在库商品得物行情</button>
+      </div>
+      <p class="hint">你在共鞋小程序里<b>查过的货号</b>,点「采集签名」自动登记(扫描约1分钟,期间别关微信);没登记的货号去共鞋里搜一次再来采集。「刷新」按尺码匹配分码得物价,未匹配的尺码取全码最低价。使用你自己的共鞋账号,仅供个人行情参考。</p>
+    </div>
+
     <div class="card">
       <h3>手机安装说明</h3>
       <p class="hint">
@@ -369,7 +378,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.7 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.8 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情+本地扩展源得物行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -1415,6 +1424,62 @@ async function syncMktPrices(){
   toast("海外行情刷新完成：更新 "+ok+" · 未匹配 "+miss+" · 失败 "+fail,"ok",3500);
 }
 
+/* ================= 国内行情(本地扩展源,自动探测) ================= */
+async function probeLocalExt(){
+  var card = document.getElementById("gxCard");
+  if(!card) return;
+  try{
+    var r = await fetch(mktApiBase()+"/gx/signs", { cache:"no-store" });
+    var d = await r.json();
+    if(d && d.ok){ card.style.display = ""; gxSignInfo(d.total); }
+  }catch(e){}
+}
+function gxSignInfo(n){ var el = document.getElementById("gxSignInfo"); if(el) el.textContent = "已登记 "+n+" 个货号"; }
+async function gxCapture(){
+  toast("正在扫描小程序查询记录(约1分钟),请勿关闭微信…","",6000);
+  try{
+    var r = await fetch(mktApiBase()+"/gx/capture", { method:"POST" });
+    var d = await r.json();
+    gxSignInfo(d.total||0);
+    toast("签名采集完成:新增 "+(d.added||0)+" · 共 "+(d.total||0)+" 个货号","ok",3500);
+  }catch(e){ toast("采集失败:确认行情服务在运行","err",3000); }
+}
+function gxMatchSize(sizes, want){
+  want = String(want||"").trim();
+  var pick = sizes.find(function(s){ return s.size === want; });
+  if(!pick && want){
+    var w = parseFloat(want);
+    if(!isNaN(w)) pick = sizes.find(function(s){ var v = parseFloat(s.size); return !isNaN(v) && v === w; });
+  }
+  return pick || null;
+}
+var dwSyncing = false;
+async function syncDwPrices(){
+  if(dwSyncing) return;
+  var targets = db.products.filter(function(p){ return (p.qty|0) > 0 && p.sku; });
+  if(!targets.length){ toast("没有在库且带货号的商品","err"); return; }
+  dwSyncing = true;
+  var btn = document.getElementById("btnSyncDw"); btn.disabled = true;
+  var ok=0, miss=0;
+  for(var i=0;i<targets.length;i++){
+    var p = targets[i];
+    btn.textContent = "刷新中 "+(i+1)+"/"+targets.length+"…";
+    try{
+      var r = await fetch(mktApiBase()+"/gx/price?sku="+encodeURIComponent(p.sku), { cache:"no-store" });
+      var d = await r.json();
+      if(d && d.found && d.sizes && d.sizes.length){
+        var pick = gxMatchSize(d.sizes, p.size);
+        var price = pick ? (pick.pt||0) : (d.minPt||0);
+        if(price > 0){ applyMkt(p, price, 0); ok++; } else miss++;
+      } else miss++;
+    }catch(e){ miss++; }
+    await new Promise(function(res){ setTimeout(res, 1600); });
+  }
+  save(); dwSyncing = false; btn.disabled = false; btn.textContent = "刷新在库商品得物行情";
+  renderProd(); renderHome();
+  toast("得物行情刷新完成:更新 "+ok+" · 未匹配/未登记 "+miss+"(未登记的先去共鞋查一次再「采集签名」)","ok",4000);
+}
+
 /* ================= 备份 ================= */
 function download(name, content, mime){
   var b = new Blob([content], {type:mime||"application/octet-stream"});
@@ -1533,6 +1598,7 @@ function importProductsCSV(inp){
 load();
 initScanMode();
 initMktApi();
+probeLocalExt();
 renderHome();
 renderProd();
 renderCartBadge();

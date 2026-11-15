@@ -120,6 +120,13 @@ function summarize(hits){
   };
 }
 
+/* 可选本地扩展包(不入库):同目录存在 gx-local.js 等扩展时自动挂载,提供额外的行情数据源端点 */
+const localExts = [];
+try{
+  const gx = require('./gx-local.js');
+  if(gx && gx.handle) localExts.push(gx);
+}catch(e){}
+
 http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -127,6 +134,9 @@ http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   if(req.method === 'OPTIONS'){ res.end(); return; }
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  for(const ext of localExts){
+    try{ if(await ext.handle(u.pathname, req, res)) return; }catch(e){}
+  }
   if(u.pathname === '/health'){ res.end('{"ok":true,"service":"sneaker-erp-mkt"}'); return; }
   if(u.pathname === '/ai'){
     const cfg = llmConfig();
