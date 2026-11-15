@@ -363,7 +363,8 @@ nav button{position:relative}
       <div class="btnrow" style="margin-top:8px">
         <button class="btn small primary" id="btnSyncDw" style="flex:1" onclick="syncDwPrices()">刷新在库商品得物行情</button>
       </div>
-      <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 这些货号就能自动刷新得物行情。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
+      <p class="hint" id="gxNoSign" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"></p>
+      <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 自动刷新得物行情。<b>已登记的货号每天打开 ERP 会自动刷新,无需任何操作</b>;新货号只需在共鞋里查一次(终身有效)。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
     </div>
 
     <div class="card">
@@ -381,7 +382,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.9 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情+本地扩展源得物行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v2.0 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情+本地扩展源得物行情自动刷新(打开即刷) / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -1434,7 +1435,13 @@ async function probeLocalExt(){
   try{
     var r = await fetch(mktApiBase()+"/gx/signs", { cache:"no-store" });
     var d = await r.json();
-    if(d && d.ok){ card.style.display = ""; gxSignInfo(d.total); }
+    if(d && d.ok){
+      card.style.display = "";
+      gxSignInfo(d.total);
+      /* 打开 ERP 自动刷新在库得物行情(静默,已登记货号) */
+      var has = db.products.some(function(p){ return (p.qty|0) > 0 && p.sku; });
+      if(has) syncDwPrices(true);
+    }
   }catch(e){}
 }
 function gxSignInfo(n){ var el = document.getElementById("gxSignInfo"); if(el) el.textContent = "已登记 "+n+" 个货号"; }
@@ -1451,7 +1458,8 @@ async function gxCaptureStop(){
     var r = await fetch(mktApiBase()+"/gx/capture/stop", { method:"POST" });
     var d = await r.json();
     gxSignInfo(d.total||0);
-    toast("采集完成:新增 "+(d.added||0)+" · 共 "+(d.total||0)+" 个货号","ok",3500);
+    toast("采集完成:新增 "+(d.added||0)+" · 共 "+(d.total||0)+" 个货号,自动刷新行情中…","ok",3000);
+    syncDwPrices(true);
   }catch(e){ toast("完成采集失败","err",3000); }
 }
 function gxMatchSize(sizes, want){
@@ -1464,16 +1472,17 @@ function gxMatchSize(sizes, want){
   return pick || null;
 }
 var dwSyncing = false;
-async function syncDwPrices(){
+var dwNoSign = [];   /* 未登记签名的货号,刷新后引导补采 */
+async function syncDwPrices(silent){
   if(dwSyncing) return;
   var targets = db.products.filter(function(p){ return (p.qty|0) > 0 && p.sku; });
-  if(!targets.length){ toast("没有在库且带货号的商品","err"); return; }
+  if(!targets.length){ if(!silent) toast("没有在库且带货号的商品","err"); return; }
   dwSyncing = true;
-  var btn = document.getElementById("btnSyncDw"); btn.disabled = true;
-  var ok=0, miss=0;
+  var btn = document.getElementById("btnSyncDw"); if(btn) btn.disabled = true;
+  var ok=0, miss=0; dwNoSign = [];
   for(var i=0;i<targets.length;i++){
     var p = targets[i];
-    btn.textContent = "刷新中 "+(i+1)+"/"+targets.length+"…";
+    if(btn) btn.textContent = "刷新中 "+(i+1)+"/"+targets.length+"…";
     try{
       var r = await fetch(mktApiBase()+"/gx/price?sku="+encodeURIComponent(p.sku), { cache:"no-store" });
       var d = await r.json();
@@ -1481,13 +1490,36 @@ async function syncDwPrices(){
         var pick = gxMatchSize(d.sizes, p.size);
         var price = pick ? (pick.pt||0) : (d.minPt||0);
         if(price > 0){ applyMkt(p, price, 0); ok++; } else miss++;
-      } else miss++;
+      } else {
+        miss++;
+        if(d && d.reason === "no_sign") dwNoSign.push(p.sku);
+      }
     }catch(e){ miss++; }
     await new Promise(function(res){ setTimeout(res, 3000); });
   }
-  save(); dwSyncing = false; btn.disabled = false; btn.textContent = "刷新在库商品得物行情";
+  save(); dwSyncing = false; if(btn){ btn.disabled = false; btn.textContent = "刷新在库商品得物行情"; }
   renderProd(); renderHome();
-  toast("得物行情刷新完成:更新 "+ok+" · 未匹配/未登记 "+miss+"(未登记的先去共鞋查一次再「采集签名」)","ok",4000);
+  if(silent){
+    if(ok) toast("得物行情已自动刷新 "+ok+" 件"+(dwNoSign.length?(","+dwNoSign.length+" 个货号待登记"):""),"ok",4000);
+  } else {
+    toast("得物行情刷新完成:更新 "+ok+" · 未匹配/未登记 "+miss+(dwNoSign.length?"(未登记的见下方清单)":""),"ok",4000);
+  }
+  dwRenderNoSign();
+}
+function dwRenderNoSign(){
+  var el = document.getElementById("gxNoSign");
+  if(!el) return;
+  if(dwNoSign.length){
+    el.style.display = "";
+    el.innerHTML = '未登记货号 <b>'+dwNoSign.length+'</b> 个:'+esc(dwNoSign.join("、"))+
+      ' <button class="btn small" onclick="dwCopyNoSign()">复制清单</button><br>去共鞋小程序逐个搜索这些货号 → 回来点「①开始采集」查完点「②完成采集」';
+  } else el.style.display = "none";
+}
+function dwCopyNoSign(){
+  var t = dwNoSign.join("\n");
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){ toast("清单已复制,去共鞋逐个搜索","ok"); },function(){ toast(dwNoSign.join(" "),"",5000); });
+  } else toast(dwNoSign.join(" "),"",6000);
 }
 
 /* ================= 备份 ================= */
