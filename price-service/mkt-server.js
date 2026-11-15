@@ -46,12 +46,14 @@ async function aiRecognize(b64){
         { type:'image_url', image_url:{ url:'data:image/jpeg;base64,' + b64 } },
         { type:'text', text: AI_PROMPT }
       ]}],
-      temperature: 0.1, max_tokens: 300
+      temperature: 0.1, max_tokens: 1024,
+      thinking: { type: 'disabled' }  /* GLM-4.5系为思考模型,关掉以免token耗在推理上;其他端点会忽略 */
     })
   });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error('大模型接口错误 ' + res.status + ': ' + JSON.stringify(data).slice(0, 200));
-  const text = (data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content) || '';
+  const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
+  const text = msg.content || msg.reasoning_content || '';
   const m = text.match(/\{[\s\S]*\}/);
   if(!m) throw new Error('大模型未返回JSON: ' + text.slice(0, 120));
   const f = JSON.parse(m[0]);
