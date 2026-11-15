@@ -2,3 +2,4 @@ price-service/config.json
 price-service/gx-config.json
 price-service/gx-local.js
 price-service/gx-capture.py
+price-service/gx-capture-live.py

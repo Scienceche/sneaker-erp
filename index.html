@@ -357,10 +357,13 @@ nav button{position:relative}
     <div class="card" id="gxCard" style="display:none">
       <h3>得物行情自动刷新 · 本地扩展源 <span class="more" id="gxSignInfo"></span></h3>
       <div class="btnrow">
-        <button class="btn small" onclick="gxCapture()">📥 采集签名</button>
+        <button class="btn small" id="btnCapStart" onclick="gxCaptureStart()">① 开始采集</button>
+        <button class="btn small primary" id="btnCapStop" onclick="gxCaptureStop()">② 完成采集</button>
+      </div>
+      <div class="btnrow" style="margin-top:8px">
         <button class="btn small primary" id="btnSyncDw" style="flex:1" onclick="syncDwPrices()">刷新在库商品得物行情</button>
       </div>
-      <p class="hint">你在共鞋小程序里<b>查过的货号</b>,点「采集签名」自动登记(扫描约1分钟,期间别关微信);没登记的货号去共鞋里搜一次再来采集。「刷新」按尺码匹配分码得物价,未匹配的尺码取全码最低价。使用你自己的共鞋账号,仅供个人行情参考。</p>
+      <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 这些货号就能自动刷新得物行情。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
     </div>
 
     <div class="card">
@@ -378,7 +381,7 @@ nav button{position:relative}
 
     <div class="card">
       <h3>关于</h3>
-      <p class="hint">球鞋ERP v1.8 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情+本地扩展源得物行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
+      <p class="hint">球鞋ERP v1.9 · 单文件进销存<br>支持扫码录入 / AI拍照识别自动填表 / 条码库自动填充(尽力) / 识货得物比价+行情快填 / GOAT海外行情+本地扩展源得物行情自动刷新 / 行情价与库存估值 / 尺码批量建档 / 开单收银 / 出入库 / 退货 / 利润统计 / 销售图表 / 低库存预警 / CSV导入导出。数据仅存于本机，请定期备份。</p>
       <button class="btn danger" style="margin-top:12px;width:100%" onclick="clearAll()">清空全部数据</button>
     </div>
   </section>
@@ -1435,14 +1438,21 @@ async function probeLocalExt(){
   }catch(e){}
 }
 function gxSignInfo(n){ var el = document.getElementById("gxSignInfo"); if(el) el.textContent = "已登记 "+n+" 个货号"; }
-async function gxCapture(){
-  toast("正在扫描小程序查询记录(约1分钟),请勿关闭微信…","",6000);
+async function gxCaptureStart(){
   try{
-    var r = await fetch(mktApiBase()+"/gx/capture", { method:"POST" });
+    var r = await fetch(mktApiBase()+"/gx/capture/start", { method:"POST" });
+    var d = await r.json();
+    if(d && d.ok) toast("采集已开启:现在去共鞋小程序搜索要登记的货号(可连查多个),查完回来点「完成采集」","",6000);
+    else toast("采集开启失败","err");
+  }catch(e){ toast("开启失败:确认行情服务在运行","err",3000); }
+}
+async function gxCaptureStop(){
+  try{
+    var r = await fetch(mktApiBase()+"/gx/capture/stop", { method:"POST" });
     var d = await r.json();
     gxSignInfo(d.total||0);
-    toast("签名采集完成:新增 "+(d.added||0)+" · 共 "+(d.total||0)+" 个货号","ok",3500);
-  }catch(e){ toast("采集失败:确认行情服务在运行","err",3000); }
+    toast("采集完成:新增 "+(d.added||0)+" · 共 "+(d.total||0)+" 个货号","ok",3500);
+  }catch(e){ toast("完成采集失败","err",3000); }
 }
 function gxMatchSize(sizes, want){
   want = String(want||"").trim();
@@ -1473,7 +1483,7 @@ async function syncDwPrices(){
         if(price > 0){ applyMkt(p, price, 0); ok++; } else miss++;
       } else miss++;
     }catch(e){ miss++; }
-    await new Promise(function(res){ setTimeout(res, 1600); });
+    await new Promise(function(res){ setTimeout(res, 3000); });
   }
   save(); dwSyncing = false; btn.disabled = false; btn.textContent = "刷新在库商品得物行情";
   renderProd(); renderHome();
