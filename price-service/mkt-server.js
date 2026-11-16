@@ -13,6 +13,239 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+
+/* ================= 得物采集触发页 ================= */
+function collectPage() {
+  return `<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="得物采集">
+<link rel="manifest" href="/dewu/manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="/dewu/icon-192.png">
+<link rel="apple-touch-icon" href="/dewu/icon-192.png">
+<link rel="shortcut icon" href="/dewu/icon-192.png">
+<title>得物行情采集</title><style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#0f1115;color:#e8eaf0;font-size:15px;padding:16px;padding-top:calc(16px + env(safe-area-inset-top));max-width:520px;margin:0 auto;min-height:100vh}
+h1{font-size:1.3em;margin:12px 0 16px;display:flex;align-items:center;gap:8px}
+h1 .dot{width:10px;height:10px;border-radius:50%;background:#c8f135;box-shadow:0 0 10px #c8f135}
+.card{background:#171a21;border:1px solid #2a2f3a;border-radius:14px;padding:16px;margin-bottom:14px}
+.card h3{font-size:14px;margin-bottom:10px;color:#8b93a3;font-weight:400}
+textarea{width:100%;height:100px;background:#1e222b;color:#e8eaf0;border:1px solid #2a2f3a;border-radius:10px;padding:12px;font-size:15px;resize:none;outline:none}
+textarea:focus{border-color:#c8f135}
+.btn{background:#c8f135;color:#111;border:none;border-radius:12px;padding:15px 20px;font-size:17px;font-weight:700;width:100%;cursor:pointer;margin-top:12px;transition:opacity .15s}
+.btn:active{opacity:.7;transform:scale(.98)}
+.btn:disabled{opacity:.3}
+.btn.ghost{background:transparent;color:#8b93a3;border:1px solid #2a2f3a;font-weight:400;font-size:14px;padding:10px}
+#status{font-size:13px;color:#8b93a3;margin-top:10px;white-space:pre-wrap;line-height:1.6}
+.ok{color:#3ddc84}.err{color:#ff5252}
+.dl-btn{display:none;margin-top:12px;background:#171a21;border:1px solid rgba(200,241,53,.4);color:#c8f135;border-radius:12px;padding:14px;text-align:center;font-size:16px;font-weight:600;text-decoration:none}
+.dl-btn:active{opacity:.7}
+.progress{display:none;margin-top:10px;background:#1e222b;border-radius:8px;height:6px;overflow:hidden}
+.progress i{display:block;height:100%;background:#c8f135;border-radius:8px;transition:width .5s;width:0}
+.hint{font-size:12px;color:#5a6170;line-height:1.6;margin-top:10px}
+.hist{font-size:12px;color:#8b93a3;line-height:1.8}
+.hist b{color:#c8f135}
+.stat-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+.stat{background:#171a21;border:1px solid #2a2f3a;border-radius:12px;padding:10px 12px;text-align:center}
+.stat .k{font-size:18px;font-weight:700;margin-top:2px}
+.stat .l{font-size:11px;color:#8b93a3}
+.stat.hl .k{color:#c8f135}
+</style></head><body>
+<h1><span class="dot"></span>得物行情采集</h1>
+
+<div class="stat-row" id="stats" style="display:none">
+  <div class="stat hl"><div class="k" id="sOk">0</div><div class="l">成功</div></div>
+  <div class="stat"><div class="k" id="sTotal">0</div><div class="l">总数</div></div>
+  <div class="stat"><div class="k" id="sTime">-</div><div class="l">耗时</div></div>
+</div>
+
+<div class="card">
+<h3>货号列表(每行一个,留空自动用库存)</h3>
+<textarea id="arts" placeholder="DD1391-100&#10;AQ9129-501&#10;IQ7604-100"></textarea>
+<button class="btn" onclick="run()" id="btn">🚀 开始采集</button>
+<button class="btn stop-btn" onclick="stopCollect()" id="stopBtn" style="display:none;background:transparent;color:#ff5252;border:1px solid rgba(255,82,82,.5);margin-top:8px;padding:12px">⛔ 强制停止</button>
+<div class="progress" id="prog"><i id="progBar"></i></div>
+<div id="status">填好货号点按钮,手机会自动操作得物App</div>
+<a class="dl-btn" id="dl" href="/dewu/csv">📥 下载 CSV(导入ERP)</a>
+</div>
+
+<div class="card" id="scheduleCard" style="border-color:rgba(200,241,53,.25)">
+<h3>⏰ 定时采集(手机插电脑时自动跑)</h3>
+<div style="display:flex;align-items:center;gap:12px;margin:8px 0">
+  <label style="flex:none;font-size:14px;color:#8b93a3">间隔</label>
+  <select id="intervalH" style="flex:1;background:#1e222b;color:#e8eaf0;border:1px solid #2a2f3a;border-radius:8px;padding:8px 12px;font-size:14px">
+    <option value="2">每 2 小时</option>
+    <option value="4">每 4 小时</option>
+    <option value="6" selected>每 6 小时</option>
+    <option value="12">每 12 小时</option>
+    <option value="24">每天一次</option>
+  </select>
+  <button class="btn ghost" style="flex:none;margin:0;padding:8px 16px" onclick="toggleSchedule()" id="schedBtn">开启</button>
+</div>
+<div id="schedStatus" class="hint">开启后,只要手机USB连着电脑,到了间隔就自动采集(用上次的货号清单)</div>
+</div>
+
+<div class="card">
+<h3>使用说明</h3>
+<p class="hint">① <b>手动采集</b>:贴入货号 → 点按钮 → 手机自动跑<br>
+② <b>定时采集</b>:开启后手机插电脑就自动按间隔跑<br>
+③ 采完下载CSV → 手机ERP导入</p>
+<p class="hint" style="margin-top:8px;color:#5a6170">加到主屏幕:Chrome菜单 → 添加到主屏幕</p>
+</div>
+
+<div class="card" id="histCard" style="display:none">
+<h3>上次采集</h3>
+<div class="hist" id="hist"></div>
+</div>
+
+<script>
+let polling=null;
+async function run(){
+  const btn=document.getElementById('btn');
+  const stopBtn=document.getElementById('stopBtn');
+  const st=document.getElementById('status');
+  const dl=document.getElementById('dl');
+  const prog=document.getElementById('prog');
+  const bar=document.getElementById('progBar');
+  const stats=document.getElementById('stats');
+  btn.disabled=true;btn.textContent='⏳ 采集中...';
+  stopBtn.style.display='block';
+  st.textContent='正在启动采集引擎...';st.className='';dl.style.display='none';prog.style.display='block';
+  try{
+    const body={arts:document.getElementById('arts').value.trim()};
+    const r=await fetch('/dewu/collect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    stats.style.display='grid';
+    document.getElementById('sOk').textContent=d.ok||0;
+    document.getElementById('sTotal').textContent=d.total||0;
+    if(d.ok>0){
+      st.innerHTML='✅ 成功采集 <b style="color:#3ddc84">'+d.ok+'</b> / '+d.total+' 个货号';
+      st.className='ok';
+      dl.style.display='block';
+      bar.style.width='100%';
+      try{localStorage.setItem('lastCollect',JSON.stringify({time:new Date().toLocaleString(),ok:d.ok,total:d.total}))}catch(e){}
+      showHist();
+    }else{
+      st.textContent='❌ '+(d.error||'全部失败,检查手机USB连接和得物App');
+      st.className='err';
+      bar.style.width='100%';bar.parentElement.style.display='none';
+    }
+  }catch(e){st.textContent='❌ 连不上行情服务,确保电脑开着';st.className='err';prog.style.display='none';}
+  btn.disabled=false;btn.textContent='🚀 开始采集';
+  stopBtn.style.display='none';
+}
+async function stopCollect(){
+  const st=document.getElementById('status');
+  try{
+    const r=await fetch('/dewu/stop',{method:'POST'});
+    const d=await r.json();
+    st.textContent='⛔ '+d.msg;st.className='err';
+  }catch(e){st.textContent='⛔ 停止请求失败';st.className='err';}
+  document.getElementById('stopBtn').style.display='none';
+  document.getElementById('btn').disabled=false;
+  document.getElementById('btn').textContent='🚀 开始采集';
+  document.getElementById('prog').style.display='none';
+}
+function showHist(){
+  try{
+    const h=JSON.parse(localStorage.getItem('lastCollect')||'null');
+    if(h){document.getElementById('histCard').style.display='';document.getElementById('hist').innerHTML='<b>'+h.ok+'</b> / '+h.total+' 个 · '+h.time;}
+  }catch(e){}
+}
+showHist();
+
+/* 定时采集 */
+async function loadSchedule(){
+  try{
+    const r=await fetch('/dewu/schedule');
+    const s=await r.json();
+    const btn=document.getElementById('schedBtn');
+    const st=document.getElementById('schedStatus');
+    document.getElementById('intervalH').value=s.intervalHours||6;
+    if(s.enabled){
+      btn.textContent='关闭';btn.style.background='#ff5252';btn.style.color='#fff';
+      st.innerHTML='✅ 已开启,每 '+s.intervalHours+' 小时自动采集<br>下次: '+s.nextRun+'<br>上次: '+(s.lastResult?s.lastResult.ok+'/'+s.lastResult.total+'成功':'未运行');
+    }else{
+      btn.textContent='开启';btn.style.background='';btn.style.color='';
+      st.textContent='开启后,只要手机USB连着电脑,到了间隔就自动采集';
+    }
+  }catch(e){}
+}
+async function toggleSchedule(){
+  const btn=document.getElementById('schedBtn');
+  const h=parseInt(document.getElementById('intervalH').value)||6;
+  const r=await fetch('/dewu/schedule');
+  const cur=await r.json();
+  const body={enabled:!cur.enabled,intervalHours:h};
+  await fetch('/dewu/schedule',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  loadSchedule();
+}
+loadSchedule();
+setInterval(loadSchedule,30000);
+</script></body></html>`;
+}
+let lastCollectResult = null;
+
+/* ================= 定时采集调度器 ================= */
+const SCHEDULE_FILE = path.join(__dirname, 'dewu-schedule.json');
+const ARTICLES_FILE = path.join(__dirname, '..', '..', 'tools', 'my_articles.txt');
+
+function loadSchedule(){
+  try{ return JSON.parse(fs.readFileSync(SCHEDULE_FILE, 'utf8')); }catch(e){}
+  return { enabled:false, intervalHours:6, lastRun:0, articles:[] };
+}
+function saveSchedule(s){ fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(s, null, 1)); }
+
+let collectProc = null;
+let collectBusy = false;
+
+async function runCollect(arts){
+  if(collectBusy) return { ok:0, total:0, error:'采集进行中' };
+  collectBusy = true;
+  try{
+    let args = arts && arts.length ? arts : [];
+    if(!args.length && fs.existsSync(ARTICLES_FILE)){
+      args = fs.readFileSync(ARTICLES_FILE, 'utf8').trim().split('\n').filter(Boolean);
+    }
+    if(!args.length) args = ['DD1391-100'];
+    console.log(new Date().toLocaleTimeString(), '[定时] 得物采集启动:', args.length, '个货号');
+    const proc = require('child_process').spawn('python',
+      [path.join(__dirname, '..', '..', 'tools', 'dewu_query.py'), ...args],
+      { cwd: path.join(__dirname, '..', '..', 'tools'), stdio: 'pipe' });
+    collectProc = proc;
+    let out = '';
+    proc.stdout.on('data', d => { out += d; const line = String(d).trim(); if(line) console.log('  [dewu]', line); });
+    proc.stderr.on('data', d => { out += d; });
+    await new Promise(resolve => { proc.on('close', resolve); });
+    const m = out.match(/成功 (\d+)\/(\d+)/);
+    lastCollectResult = { ok: m ? parseInt(m[1]) : 0, total: m ? parseInt(m[2]) : 0, time: new Date().toISOString(), errors: out.slice(-300) };
+    console.log('[定时] 完成:', JSON.stringify(lastCollectResult));
+    return lastCollectResult;
+  }catch(e){
+    return { ok:0, total:0, error:String(e.message || e) };
+  }finally{
+    collectBusy = false; collectProc = null;
+  }
+}
+
+/* 定时器:每5分钟检查一次是否该跑了 */
+setInterval(async () => {
+  const s = loadSchedule();
+  if(!s.enabled) return;
+  const next = s.lastRun + s.intervalHours * 3600000;
+  if(Date.now() >= next && !collectBusy){
+    console.log('[定时] 触发定时采集');
+    const r = await runCollect(s.articles);
+    s.lastRun = Date.now();
+    saveSchedule(s);
+  }
+}, 5 * 60 * 1000);
+
+/* ================= 备份 ================= */
 const PORT = process.env.PORT || 6120;
 const ALGOLIA_URL = 'https://2fwotdvm2o-dsn.algolia.net/1/indexes/*/queries?x-algolia-application-id=2FWOTDVM2O&x-algolia-api-key=ac96de6fef0e02bb95d433d8d5c7038a';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
@@ -152,6 +385,89 @@ http.createServer(async (req, res) => {
       res.statusCode = 400;
       res.end(JSON.stringify({ ok:false, error:String(e.message || e) }));
     }
+    return;
+  }
+  if(u.pathname === '/dewu/collect' && req.method === 'GET'){
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(collectPage()); return;
+  }
+  if(u.pathname === '/dewu/manifest.json'){
+    try{
+      const m = fs.readFileSync(path.join(__dirname, 'dewu-manifest.json'));
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(m);
+    }catch(e){ res.statusCode = 404; res.end('{}'); }
+    return;
+  }
+  if(u.pathname.startsWith('/dewu/icon-')){
+    try{
+      const size = u.pathname.includes('512') ? '512' : '192';
+      const icon = fs.readFileSync(path.join(__dirname, '..', 'icons', 'icon-' + size + '.png'));
+      res.setHeader('Content-Type', 'image/png');
+      res.end(icon);
+    }catch(e){ res.statusCode = 404; res.end(); }
+    return;
+  }
+  if(u.pathname === '/dewu/schedule' && req.method === 'GET'){
+    const s = loadSchedule();
+    const next = s.enabled ? new Date(s.lastRun + s.intervalHours * 3600000).toLocaleString() : null;
+    res.end(JSON.stringify({ ...s, nextRun: next, busy: collectBusy, lastResult: lastCollectResult }));
+    return;
+  }
+  if(u.pathname === '/dewu/schedule' && req.method === 'POST'){
+    try{
+      const body = JSON.parse(await readBody(req) || '{}');
+      const s = loadSchedule();
+      if(body.enabled !== undefined) s.enabled = !!body.enabled;
+      if(body.intervalHours) s.intervalHours = Math.max(1, Math.min(48, parseInt(body.intervalHours) || 6));
+      if(body.articles) s.articles = body.articles;
+      if(body.reset) s.lastRun = 0;
+      saveSchedule(s);
+      console.log('[定时] 更新:', JSON.stringify(s));
+      res.end(JSON.stringify({ ok:true, ...s }));
+    }catch(e){ res.end(JSON.stringify({ ok:false, error:String(e.message) })); }
+    return;
+  }
+  if(u.pathname === '/dewu/collect' && req.method === 'POST'){
+    try{
+      const body = JSON.parse(await readBody(req) || '{}');
+      let arts = (body.arts || '').split(/[\n,，;；\s]+/).filter(Boolean);
+      /* 手动采集:空输入必须报错(防止误触跑全量);定时采集才用保存清单 */
+      if(!arts.length){
+        res.end(JSON.stringify({ ok:0, total:0, error:'请先输入货号(每行一个)' }));
+        return;
+      }
+      /* 同时更新定时清单 */
+      const s = loadSchedule();
+      if(arts.length) s.articles = arts;
+      saveSchedule(s);
+      const r = await runCollect(arts);
+      /* 记录本次为最后一次运行 */
+      s.lastRun = Date.now(); saveSchedule(s);
+      res.end(JSON.stringify(r));
+    }catch(e){ res.end(JSON.stringify({ ok:0, total:0, error:String(e.message || e) })); }
+    return;
+  }
+  if(u.pathname === '/dewu/stop' && req.method === 'POST'){
+    if(collectProc){
+      try{ collectProc.kill('SIGKILL'); }catch(e){}
+      collectProc = null;
+      collectBusy = false;
+      console.log(new Date().toLocaleTimeString(), '[采集] 用户强制停止');
+      res.end(JSON.stringify({ ok:true, msg:'已强制停止' }));
+    }else{
+      res.end(JSON.stringify({ ok:true, msg:'当前无采集任务' }));
+    }
+    return;
+  }
+  if(u.pathname === '/dewu/csv'){
+    const csvPath = path.join(__dirname, '..', '..', 'tools', 'dewu_prices.csv');
+    try{
+      const csv = fs.readFileSync(csvPath);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="dewu_prices.csv"');
+      res.end(csv);
+    }catch(e){ res.statusCode = 404; res.end('{"error":"CSV不存在,先采集一次"}'); }
     return;
   }
   if(u.pathname !== '/price'){ res.statusCode = 404; res.end('{"error":"not found, use /price?sku=STYLE-CODE"}'); return; }
