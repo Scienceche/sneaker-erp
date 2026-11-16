@@ -1603,7 +1603,11 @@ function importProductsCSV(inp){
       var col = {};
       COLS.forEach(function(h){ col[h] = head.indexOf(h); });
       if(col["条码"]<0 && col["货号"]<0) throw new Error("缺少「条码」或「货号」列，请使用导出的CSV格式");
-      var normSize = function(s){ s = String(s||"").trim(); var v = parseFloat(s); return (!isNaN(v) && String(v) === s.replace(/\.0+$/,"")) ? String(v) : s; };
+      var normSize = function(s){
+        s = String(s||"").trim().toLowerCase().replace(/\s+/g,"").replace(/1\/3/g,"⅓").replace(/2\/3/g,"⅔");
+        var v = parseFloat(s);
+        return (!isNaN(v) && String(v) === s.replace(/\.0+$/,"")) ? String(v) : s;
+      };
       var created=0, updated=0, restock=0;
       for(var i=1;i<rows.length;i++){
         var r = rows[i];
