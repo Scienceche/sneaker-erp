@@ -363,6 +363,11 @@ nav button{position:relative}
       <div class="btnrow" style="margin-top:8px">
         <button class="btn small primary" id="btnSyncDw" style="flex:1" onclick="syncDwPrices()">刷新在库商品得物行情</button>
       </div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="btn small orange" id="btnPhoneCollect" style="flex:1;padding:12px" onclick="phoneCollect()">📱 手机采集得物行情(自动操作得物App)</button>
+      </div>
+      <button class="btn small" id="btnPhoneStop" style="display:none;width:100%;margin-top:6px;color:#ff5252;border-color:rgba(255,82,82,.5)" onclick="phoneStop()">⛔ 强制停止</button>
+      <div id="phoneStatus" class="hint" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"></div>
       <p class="hint" id="gxNoSign" style="display:none;margin-top:8px;border-top:1px dashed var(--line);padding-top:8px"></p>
       <p class="hint">用法:点「① 开始采集」→ 去微信的共鞋小程序里<b>搜索你要的货号</b>(可连续查多个)→ 回来点「② 完成采集」→ 自动刷新得物行情。<b>已登记的货号每 6 小时自动刷新一次</b>(共鞋有查询配额,冷却避免浪费次数);新货号只需在共鞋里查一次(终身有效)。采集期间系统流量走本地代理,查完记得点②恢复。使用你自己的共鞋账号,仅供个人行情参考。</p>
     </div>
@@ -1521,6 +1526,72 @@ function dwCopyNoSign(){
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(t).then(function(){ toast("清单已复制,去共鞋逐个搜索","ok"); },function(){ toast(dwNoSign.join(" "),"",5000); });
   } else toast(dwNoSign.join(" "),"",6000);
+}
+
+/* ================= 手机采集得物行情(一键,价格直进库存) ================= */
+var phoneBusy = false;
+async function phoneCollect(){
+  if(phoneBusy) return;
+  var targets = db.products.filter(function(p){ return (p.qty|0) > 0 && p.sku; });
+  if(!targets.length){ toast("没有在库且带货号的商品","err"); return; }
+  var arts = targets.map(function(p){ return p.sku; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
+  if(!confirm("将自动操作手机上的得物App,采集 "+arts.length+" 个货号的分码行情(约"+Math.ceil(arts.length*0.7)+"分钟)。手机需USB连电脑。开始?")) return;
+
+  phoneBusy = true;
+  var btn = document.getElementById("btnPhoneCollect");
+  var stopBtn = document.getElementById("btnPhoneStop");
+  var st = document.getElementById("phoneStatus");
+  btn.disabled = true; btn.textContent = "⏳ 采集中...";
+  stopBtn.style.display = "";
+  st.style.display = ""; st.textContent = "已启动 "+arts.length+" 个货号,手机上得物App自动操作中...";
+
+  try{
+    var r = await fetch(mktApiBase()+"/dewu/collect",{
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ arts: arts.join("\n") })
+    });
+    var d = await r.json();
+    if(d.ok > 0){
+      /* 直接从采集结果更新库存价格,不需要CSV */
+      var updated = 0;
+      var r2 = await fetch(mktApiBase()+"/dewu/csv");
+      var csvText = await r2.text();
+      var lines = csvText.split("\n").slice(1);
+      var priceMap = {};
+      lines.forEach(function(line){
+        var parts = line.split(",");
+        if(parts.length >= 3){
+          var key = parts[0].trim().toLowerCase() + "|" + parts[1].trim().toLowerCase();
+          priceMap[key] = parseFloat(parts[2]) || 0;
+        }
+      });
+      targets.forEach(function(p){
+        var key = (p.sku||"").toLowerCase() + "|" + normSize(p.size);
+        var key2 = (p.sku||"").toLowerCase() + "|" + (p.size||"").toLowerCase();
+        var price = priceMap[key] || priceMap[key2] || 0;
+        if(price > 0){ applyMkt(p, price, 0); updated++; }
+      });
+      save(); renderProd(); renderHome();
+      st.innerHTML = "✅ 采集成功 "+d.ok+"/"+d.total+" 个货号,直接更新了 <b style='color:var(--acc)'>"+updated+"</b> 个SKU的得物行情";
+      toast("手机采集完成:"+updated+" 个SKU行情已更新","ok",4000);
+    }else{
+      st.textContent = "❌ "+(d.error||"采集失败");
+    }
+  }catch(e){
+    st.textContent = "❌ 连不上行情服务,确保电脑开着且手机USB连接";
+  }
+  phoneBusy = false;
+  btn.disabled = false; btn.textContent = "📱 手机采集得物行情(自动操作得物App)";
+  stopBtn.style.display = "none";
+}
+async function phoneStop(){
+  try{
+    await fetch(mktApiBase()+"/dewu/stop",{method:"POST"});
+    toast("已发送停止指令","ok");
+    document.getElementById("btnPhoneStop").style.display = "none";
+    document.getElementById("phoneStatus").textContent = "⛔ 已强制停止";
+  }catch(e){ toast("停止失败","err"); }
 }
 
 /* ================= 备份 ================= */
