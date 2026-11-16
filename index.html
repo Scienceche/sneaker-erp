@@ -1387,7 +1387,14 @@ function renderRec(){
 
 /* ================= 海外行情自动刷新(本地 price-service) ================= */
 function mktApiBase(){
-  if(!db.meta.mktApi) db.meta.mktApi = "http://127.0.0.1:6120";
+  if(!db.meta.mktApi){
+    /* 如果ERP本身就从行情服务加载(端口6120),直接用同源地址,零配置 */
+    if(location.origin.indexOf(':6120') >= 0){
+      db.meta.mktApi = location.origin;
+    }else{
+      db.meta.mktApi = "http://127.0.0.1:6120";
+    }
+  }
   return db.meta.mktApi.replace(/\/+$/,"");
 }
 function initMktApi(){ var el = document.getElementById("mktApi"); if(el) el.value = mktApiBase(); }

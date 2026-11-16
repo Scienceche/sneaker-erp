@@ -370,6 +370,31 @@ http.createServer(async (req, res) => {
   for(const ext of localExts){
     try{ if(await ext.handle(u.pathname, req, res)) return; }catch(e){}
   }
+  /* ================= 静态文件服务(ERP托管) ================= */
+  const ERP_DIR = path.join(__dirname, '..');
+  const MIME = { '.html':'text/html; charset=utf-8', '.js':'application/javascript; charset=utf-8',
+    '.css':'text/css; charset=utf-8', '.json':'application/json', '.png':'image/png',
+    '.jpg':'image/jpeg', '.svg':'image/svg+xml', '.ico':'image/x-icon' };
+  if(req.method === 'GET' && !u.pathname.startsWith('/price') && !u.pathname.startsWith('/ai')
+     && !u.pathname.startsWith('/gx') && !u.pathname.startsWith('/dewu') && !u.pathname.startsWith('/health')){
+    let fp = path.join(ERP_DIR, u.pathname === '/' ? 'index.html' : u.pathname);
+    if(!fp.startsWith(ERP_DIR)) { res.statusCode = 403; res.end(); return; }
+    try{
+      const data = fs.readFileSync(fp);
+      res.setHeader('Content-Type', MIME[path.extname(fp)] || 'application/octet-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.end(data);
+    }catch(e){
+      // SPA fallback: 非API路径都回index.html
+      try{
+        const data = fs.readFileSync(path.join(ERP_DIR, 'index.html'));
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.end(data);
+      }catch(e2){ res.statusCode = 404; res.end('Not found'); }
+    }
+    return;
+  }
+
   if(u.pathname === '/health'){ res.end('{"ok":true,"service":"sneaker-erp-mkt"}'); return; }
   if(u.pathname === '/ai'){
     const cfg = llmConfig();
