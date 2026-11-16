@@ -456,7 +456,9 @@ http.createServer(async (req, res) => {
   if(u.pathname === '/dewu/collect' && req.method === 'POST'){
     try{
       const body = JSON.parse(await readBody(req) || '{}');
-      let arts = (body.arts || '').split(/[\n,，;；\s]+/).filter(Boolean);
+      /* 支持数组直传(ERP手机采集)或换行/逗号分隔(采集页面);不按空格拆(货号含空格) */
+      let arts = Array.isArray(body.arts) ? body.arts.filter(Boolean) :
+                 (body.arts || '').split(/[\n\r,，;；]+/).map(s=>s.trim()).filter(Boolean);
       /* 手动采集:空输入必须报错(防止误触跑全量);定时采集才用保存清单 */
       if(!arts.length){
         res.end(JSON.stringify({ ok:0, total:0, error:'请先输入货号(每行一个)' }));

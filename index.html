@@ -1556,7 +1556,7 @@ async function phoneCollect(){
     var r = await fetch(mktApiBase()+"/dewu/collect",{
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ arts: arts.join("\n") })
+      body: JSON.stringify({ arts: arts })  /* 直接发数组,不拆空格 */
     });
     var d = await r.json();
     if(d.ok > 0){
