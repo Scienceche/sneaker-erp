@@ -456,23 +456,27 @@ http.createServer(async (req, res) => {
   if(u.pathname === '/dewu/collect' && req.method === 'POST'){
     try{
       const body = JSON.parse(await readBody(req) || '{}');
-      /* 支持数组直传(ERP手机采集)或换行/逗号分隔(采集页面);不按空格拆(货号含空格) */
       let arts = Array.isArray(body.arts) ? body.arts.filter(Boolean) :
                  (body.arts || '').split(/[\n\r,，;；]+/).map(s=>s.trim()).filter(Boolean);
-      /* 手动采集:空输入必须报错(防止误触跑全量);定时采集才用保存清单 */
       if(!arts.length){
         res.end(JSON.stringify({ ok:0, total:0, error:'请先输入货号(每行一个)' }));
         return;
       }
-      /* 同时更新定时清单 */
       const s = loadSchedule();
       if(arts.length) s.articles = arts;
       saveSchedule(s);
-      const r = await runCollect(arts);
-      /* 记录本次为最后一次运行 */
-      s.lastRun = Date.now(); saveSchedule(s);
-      res.end(JSON.stringify(r));
+      if(collectBusy){
+        res.end(JSON.stringify({ ok:0, total:0, error:'已有采集任务进行中' }));
+        return;
+      }
+      /* 异步:立即返回"已启动",后台跑,前端轮询 /dewu/status */
+      runCollect(arts).then(()=>{ s.lastRun=Date.now(); saveSchedule(s); }).catch(()=>{});
+      res.end(JSON.stringify({ started:true, total:arts.length, msg:'采集已启动,后台运行中' }));
     }catch(e){ res.end(JSON.stringify({ ok:0, total:0, error:String(e.message || e) })); }
+    return;
+  }
+  if(u.pathname === '/dewu/status'){
+    res.end(JSON.stringify({ busy:collectBusy, result:lastCollectResult }));
     return;
   }
   if(u.pathname === '/dewu/stop' && req.method === 'POST'){
