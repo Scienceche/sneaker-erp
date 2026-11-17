@@ -1559,12 +1559,12 @@ async function phoneCollect(){
       body: JSON.stringify({ arts: arts })  /* 直接发数组,不拆空格 */
     });
     var d = await r.json();
-    if(d.ok > 0){
+      if(d.ok > 0){
       /* 直接从采集结果更新库存价格,不需要CSV */
       var updated = 0;
       var r2 = await fetch(mktApiBase()+"/dewu/csv");
       var csvText = await r2.text();
-      var lines = csvText.split("\n").slice(1);
+      var lines = csvText.split(/\r?\n/).slice(1);
       var priceMap = {};
       lines.forEach(function(line){
         var parts = line.split(",");
@@ -1573,10 +1573,36 @@ async function phoneCollect(){
           priceMap[key] = parseFloat(parts[2]) || 0;
         }
       });
+      /* 尺码智能匹配:精确→分数转半码→半码转分数 */
+      var szAlt = function(s){
+        s = String(s||"").trim().toLowerCase();
+        var m = s.match(/^(\d+)(⅓|⅔)$/);
+        if(m){
+          var base = parseInt(m[1]);
+          return m[2]==="⅓" ? String(base)+".5" : String(base+1);
+        }
+        m = s.match(/^(\d+)\.5$/);
+        if(m) return String(parseInt(m[1]))+"⅓";
+        return null;
+      };
       targets.forEach(function(p){
-        var key = (p.sku||"").toLowerCase() + "|" + normSize(p.size);
-        var key2 = (p.sku||"").toLowerCase() + "|" + (p.size||"").toLowerCase();
-        var price = priceMap[key] || priceMap[key2] || 0;
+        var sku = (p.sku||"").toLowerCase();
+        var sz = normSize(p.size);
+        var szRaw = (p.size||"").toLowerCase();
+        var alt = szAlt(p.size);
+        var alt2 = szAlt(sz);
+        var price = priceMap[sku+"|"+sz] || priceMap[sku+"|"+szRaw] || 0;
+        if(!price && alt) price = priceMap[sku+"|"+alt];
+        if(!price && alt2) price = priceMap[sku+"|"+alt2];
+        if(!price){
+          /* 最后兜底:找该货号全码最低价 */
+          var all = Object.keys(priceMap).filter(function(k){ return k.indexOf(sku+"|")===0; });
+          if(all.length){
+            var min = Infinity;
+            all.forEach(function(k){ if(priceMap[k]>0 && priceMap[k]<min) min = priceMap[k]; });
+            if(min<Infinity) price = min;
+          }
+        }
         if(price > 0){ applyMkt(p, price, 0); updated++; }
       });
       save(); renderProd(); renderHome();
