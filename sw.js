@@ -1,5 +1,5 @@
 /* 球鞋ERP Service Worker：缓存全站资源，离线可用 */
-var CACHE = "sneaker-erp-v20";
+var CACHE = "sneaker-erp-v21";
 var ASSETS = [
   "./",
   "./index.html",

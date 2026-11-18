@@ -1447,14 +1447,16 @@ async function probeLocalExt(){
   try{
     var r = await fetch(mktApiBase()+"/gx/signs", { cache:"no-store" });
     var d = await r.json();
-    if(d && d.ok){
-      card.style.display = "";
-      gxSignInfo(d.total);
-      /* 打开自动刷新带6小时冷却:共鞋有查询配额,避免每次打开都消耗次数 */
-      var has = db.products.some(function(p){ return (p.qty|0) > 0 && p.sku; });
-      var last = (db.meta && db.meta.dwLastSync) || 0;
-      if(has && Date.now() - last > 6*3600*1000) syncDwPrices(true);
-    }
+  if(d && d.ok){
+    card.style.display = "";
+    gxSignInfo(d.total);
+    /* 共鞋同步(6h冷却) */
+    var has = db.products.some(function(p){ return (p.qty|0) > 0 && p.sku; });
+    var last = (db.meta && db.meta.dwLastSync) || 0;
+    if(has && Date.now() - last > 6*3600*1000) syncDwPrices(true);
+    /* 得物手机采集结果自动导入(检查服务端是否有新结果) */
+    if(has) autoImportDewu();
+  }
   }catch(e){}
 }
 function gxSignInfo(n){ var el = document.getElementById("gxSignInfo"); if(el) el.textContent = "已登记 "+n+" 个货号"; }
@@ -1643,6 +1645,63 @@ async function phoneStop(){
     document.getElementById("btnPhoneStop").style.display = "none";
     document.getElementById("phoneStatus").textContent = "⛔ 已强制停止";
   }catch(e){ toast("停止失败","err"); }
+}
+
+/* ================= 得物手机采集结果自动导入 ================= */
+async function autoImportDewu(){
+  try{
+    /* 检查服务端是否有比上次导入更新的采集结果 */
+    var sr = await fetch(mktApiBase()+"/dewu/status",{cache:"no-store"});
+    var sd = await sr.json();
+    if(!sd.result || !sd.result.time) return;
+    var resultTime = new Date(sd.result.time).getTime();
+    var lastImport = (db.meta && db.meta.dwLastImport) || 0;
+    if(resultTime <= lastImport) return;  /* 已导入过 */
+    /* 有新结果,读CSV导入 */
+    var r2 = await fetch(mktApiBase()+"/dewu/csv");
+    var csvText = await r2.text();
+    var lines = csvText.split(/\r?\n/).slice(1);
+    var priceMap = {};
+    lines.forEach(function(line){
+      var parts = line.split(",");
+      if(parts.length >= 3){
+        priceMap[parts[0].trim().toLowerCase()+"|"+parts[1].trim().toLowerCase()] = parseFloat(parts[2])||0;
+      }
+    });
+    var szAlt = function(s){
+      s = String(s||"").trim().toLowerCase();
+      var m = s.match(/^(\d+)(⅓|⅔)$/);
+      if(m) return m[2]==="⅓" ? parseInt(m[1])+".5" : String(parseInt(m[1])+1);
+      m = s.match(/^(\d+)\.5$/);
+      if(m) return parseInt(m[1])+"⅓";
+      return null;
+    };
+    var updated = 0;
+    db.products.forEach(function(p){
+      if(!(p.sku||"").trim()) return;
+      var sku = p.sku.toLowerCase();
+      var sz = normSize(p.size);
+      var alt = szAlt(p.size);
+      var price = priceMap[sku+"|"+sz] || priceMap[sku+"|"+(p.size||"").toLowerCase()] || 0;
+      if(!price && alt) price = priceMap[sku+"|"+alt];
+      if(!price){
+        var all = Object.keys(priceMap).filter(function(k){ return k.indexOf(sku+"|")===0; });
+        if(all.length){
+          var min = Infinity;
+          all.forEach(function(k){ if(priceMap[k]>0 && priceMap[k]<min) min = priceMap[k]; });
+          if(min<Infinity) price = min;
+        }
+      }
+      if(price > 0){ applyMkt(p, price, 0); updated++; }
+    });
+    if(updated > 0){
+      db.meta.dwLastImport = resultTime;
+      save(); renderProd(); renderHome();
+      toast("✅ 已自动导入得物行情("+updated+" 个SKU更新)","ok",4000);
+    } else {
+      db.meta.dwLastImport = resultTime; save();
+    }
+  }catch(e){ /* 静默失败 */ }
 }
 
 /* ================= 备份 ================= */
