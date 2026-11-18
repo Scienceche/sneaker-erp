@@ -816,6 +816,12 @@ function ageStr(ts){
   if(s<86400) return Math.round(s/3600)+"小时前";
   return Math.round(s/86400)+"天前";
 }
+/* 全局尺码归一化(所有功能共用):小写/去空格/分数统一/数值归一 */
+function normSize(s){
+  s = String(s||"").trim().toLowerCase().replace(/\s+/g,"").replace(/1\/3/g,"⅓").replace(/2\/3/g,"⅔");
+  var v = parseFloat(s);
+  return (!isNaN(v) && String(v) === s.replace(/\.0+$/,"")) ? String(v) : s;
+}
 /* 行情快填：商品列表一键更新得物/海外行情价 */
 function openMktQuick(id){
   var p = db.products.find(function(x){ return x.id===id; });
